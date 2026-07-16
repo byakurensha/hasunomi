@@ -1,0 +1,39 @@
+# General Git is a small Markdown checkpoint, not a file backup.
+*
+!*/
+
+# Git policy itself and root operating canon.
+!/.gitignore
+!/CLAUDE.md
+!/ROLE.md
+!/SETTINGS.md
+!/UPDATE.md
+
+# AI-facing rules and skill entrypoints.
+!/.claude/
+!/.claude/rules/
+!/.claude/rules/**/*.md
+!/.claude/skills/
+!/.claude/skills/**/
+!/.claude/skills/**/SKILL.md
+
+# Reusable memory. Project contents are represented only by MASTER.md.
+!/MEMORY/
+!/MEMORY/MEMORY.md
+!/MEMORY/IMPROVEMENT.md
+!/MEMORY/notes/
+!/MEMORY/notes/*.md
+!/PROJECTS/
+!/PROJECTS/**/
+!/PROJECTS/*/MASTER.md
+!/PROJECTS/*/*/MASTER.md
+
+# Reserved project payload trees always stay backup-owned. These final rules
+# override any MASTER.md name found inside an imported snapshot.
+/PROJECTS/**/Materials/
+/PROJECTS/**/Output/
+/PROJECTS/**/Archives/
+
+# Update rollback payloads may contain their own copied .gitignore. Ignore the
+# whole backup tree so nested rules cannot leak files into workspace status.
+/UPDATES/

@@ -1,0 +1,8 @@
+HASUNOMI GLM + DeepSeek Gateway Add-on 2.0.0
+
+- Maps Claude Code Opus to direct GLM-5.2, Sonnet to OpenRouter DeepSeek V4
+  Pro, and Haiku to direct DeepSeek V4 Pro.
+- Keeps GLM-4.6V as the shared image and PDF analysis route.
+- Normalizes OpenRouter reasoning blocks for stable Claude Code streaming.
+- Stores Z.AI, OpenRouter, and DeepSeek keys separately with mode 600.
+- Registers the official hosted Exa MCP without another API key.

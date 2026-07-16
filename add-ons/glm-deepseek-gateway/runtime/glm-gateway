@@ -1,0 +1,394 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import base64
+import getpass
+import json
+import mimetypes
+import os
+import shutil
+import sqlite3
+import stat
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List
+
+from glm_gateway_common import (
+    CONFIG_DIR,
+    CONFIG_FILE,
+    EXTENSIONS,
+    HOME,
+    KEY_SPECS,
+    SHARE,
+    USER_DATA,
+    WRAPPER,
+    GatewayError,
+    ensure_gateway,
+    get_health,
+    health_matches,
+    key_path,
+    local_message,
+    read_config,
+    stop_gateway,
+)
+
+EXA_MCP = {"type": "http", "url": "https://mcp.exa.ai/mcp"}
+
+
+def locate_code() -> str:
+    configured = os.environ.get("GLM_GATEWAY_CODE", "")
+    candidates = [
+        configured,
+        shutil.which("code") or "",
+        "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+        "/usr/share/code/bin/code",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    raise GatewayError("Visual Studio Code command was not found")
+
+
+def write_settings(config: Dict[str, Any]) -> None:
+    settings = USER_DATA / "User/settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    value = {
+        "claudeCode.useTerminal": False,
+        "claudeCode.disableLoginPrompt": True,
+        "claudeCode.claudeProcessWrapper": str(WRAPPER),
+    }
+    settings.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def trust_workspace(config: Dict[str, Any]) -> None:
+    database = USER_DATA / "User/globalStorage/state.vscdb"
+    database.parent.mkdir(parents=True, exist_ok=True)
+    workspace = str(Path(str(config["workspace"])).resolve())
+    state = {
+        "uriTrustInfo": [
+            {
+                "uri": {"$mid": 1, "path": workspace, "scheme": "file"},
+                "trusted": True,
+            }
+        ]
+    }
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS ItemTable "
+            "(key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)"
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO ItemTable(key, value) VALUES (?, ?)",
+            ("content.trust.model.key", json.dumps(state, separators=(",", ":"))),
+        )
+        connection.commit()
+
+
+def command_configure(_args: argparse.Namespace) -> int:
+    config = read_config()
+    workspace = Path(str(config.get("workspace") or ""))
+    if not (workspace / "CLAUDE.md").is_file() or not (workspace / ".claude").is_dir():
+        raise GatewayError("configured workspace is not a HASUNOMI workspace")
+    code = locate_code()
+    USER_DATA.mkdir(parents=True, exist_ok=True)
+    EXTENSIONS.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            code,
+            "--user-data-dir",
+            str(USER_DATA),
+            "--extensions-dir",
+            str(EXTENSIONS),
+            "--install-extension",
+            "anthropic.claude-code",
+            "--force",
+        ],
+        check=True,
+    )
+    write_settings(config)
+    trust_workspace(config)
+    print("OK: isolated VS Code and Claude Code extension configured")
+    return 0
+
+
+def command_key(args: argparse.Namespace) -> int:
+    config = read_config()
+    providers = list(KEY_SPECS) if args.provider == "all" else [args.provider]
+    for provider in providers:
+        env_name = KEY_SPECS[provider][0]
+        label = {"zai": "Z.AI", "openrouter": "OpenRouter", "deepseek": "DeepSeek"}[provider]
+        first = getpass.getpass(f"{label} API key: ").strip()
+        if not first:
+            raise GatewayError(f"empty {label} key was not saved")
+        second = getpass.getpass(f"Confirm {label} API key: ").strip()
+        if first != second:
+            raise GatewayError(f"{label} keys did not match")
+        path = key_path(config, provider)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(f"{env_name}={first}\n", encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        temporary.replace(path)
+    stop_gateway()
+    print(f"OK: {', '.join(providers)} API key(s) stored securely in {path.parent}")
+    return 0
+
+
+def media_block(path: Path, kind: str) -> Dict[str, Any]:
+    data = base64.b64encode(path.read_bytes()).decode()
+    if kind == "pdf":
+        return {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": data},
+        }
+    media_type = mimetypes.guess_type(path.name)[0] or "image/png"
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": media_type, "data": data},
+    }
+
+
+def response_text(response: Dict[str, Any]) -> str:
+    return "\n".join(
+        str(item.get("text") or "")
+        for item in response.get("content", [])
+        if isinstance(item, dict) and item.get("type") == "text"
+    )
+
+
+def extension_installed() -> bool:
+    return any(EXTENSIONS.glob("anthropic.claude-code-*"))
+
+
+def static_checks(config: Dict[str, Any]) -> List[str]:
+    failures: List[str] = []
+    workspace = Path(str(config.get("workspace") or ""))
+    keys = {provider: key_path(config, provider) for provider in KEY_SPECS}
+    settings = USER_DATA / "User/settings.json"
+    mcp_path = workspace / ".mcp.json"
+    if not (workspace / "CLAUDE.md").is_file() or not (workspace / ".claude").is_dir():
+        failures.append("workspace markers are missing")
+    if not WRAPPER.is_file():
+        failures.append("wrapper is missing")
+    try:
+        locate_code()
+    except GatewayError as error:
+        failures.append(str(error))
+    if not extension_installed():
+        failures.append("isolated Claude Code extension is missing")
+    if not settings.is_file():
+        failures.append("isolated VS Code settings are missing")
+    else:
+        value = json.loads(settings.read_text(encoding="utf-8"))
+        if value.get("claudeCode.claudeProcessWrapper") != str(WRAPPER):
+            failures.append("wrapper setting is incorrect")
+    if not any(key.is_file() for key in keys.values()):
+        failures.append(
+            "no API key is configured; run glm-gateway key zai, "
+            "glm-gateway key openrouter, or glm-gateway key deepseek"
+        )
+    for key in keys.values():
+        if key.is_file() and stat.S_IMODE(key.stat().st_mode) != 0o600:
+            failures.append(f"API key permissions must be 600: {key}")
+    if not mcp_path.is_file():
+        failures.append(f"Exa MCP configuration is missing: {mcp_path}")
+    else:
+        try:
+            mcp = json.loads(mcp_path.read_text(encoding="utf-8"))
+            if (mcp.get("mcpServers") or {}).get("exa") != EXA_MCP:
+                failures.append("Exa MCP configuration is incorrect")
+        except (json.JSONDecodeError, AttributeError):
+            failures.append(f"MCP configuration is invalid: {mcp_path}")
+    return failures
+
+
+def command_status(_args: argparse.Namespace) -> int:
+    config = read_config()
+    print(
+        json.dumps(
+            {
+                "version": config.get("addon_version"),
+                "workspace": config.get("workspace"),
+                "models": {
+                    "opus": config.get("text_model"),
+                    "sonnet": config.get("openrouter_model"),
+                    "haiku": config.get("deepseek_model"),
+                },
+                "vision_model": config.get("vision_model"),
+                "gateway": get_health(config),
+                "keys_present": {
+                    provider: key_path(config, provider).is_file()
+                    for provider in KEY_SPECS
+                },
+                "isolated_extension": extension_installed(),
+                "exa_mcp": str(Path(str(config.get("workspace"))) / ".mcp.json"),
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def command_doctor(args: argparse.Namespace) -> int:
+    config = read_config()
+    failures = static_checks(config)
+    if failures:
+        for failure in failures:
+            print(f"NG: {failure}", file=sys.stderr)
+        return 1
+    if args.live or args.image or args.pdf:
+        ensure_gateway(config)
+        for model, expected, label in (
+            ("hasunomi-glm", "OPUS_ROUTE_OK", "Opus route"),
+            ("hasunomi-deepseek-openrouter", "SONNET_ROUTE_OK", "Sonnet route"),
+            ("hasunomi-deepseek-direct", "HAIKU_ROUTE_OK", "Haiku route"),
+        ):
+            response = local_message(
+                config,
+                {
+                    "model": model,
+                    "max_tokens": 64,
+                    "stream": False,
+                    "messages": [
+                        {"role": "user", "content": f"Reply with exactly: {expected}"}
+                    ],
+                },
+            )
+            if expected not in response_text(response):
+                raise GatewayError(f"{label} live response did not match")
+            print(f"OK: {label} text route")
+    for path_value, kind in ((args.image, "image"), (args.pdf, "pdf")):
+        if not path_value:
+            continue
+        if not key_path(config, "zai").is_file():
+            raise GatewayError(
+                f"{kind} checks require Z.AI; run: {HOME}/bin/glm-gateway key zai"
+            )
+        path = Path(path_value).expanduser().resolve()
+        if not path.is_file():
+            raise GatewayError(f"test file is missing: {path}")
+        response = local_message(
+            config,
+            {
+                "model": "hasunomi-glm",
+                "max_tokens": 256,
+                "stream": False,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            media_block(path, kind),
+                            {
+                                "type": "text",
+                                "text": "Briefly identify the visible content. Mention one concrete detail.",
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        if not response_text(response).strip():
+            raise GatewayError(f"{kind} route returned no text")
+        print(f"OK: GLM-4.6V {kind} analysis route")
+    if not (args.live or args.image or args.pdf):
+        print("OK: installation and secret boundary")
+    return 0
+
+
+def command_launch(_args: argparse.Namespace) -> int:
+    config = read_config()
+    failures = static_checks(config)
+    if failures:
+        raise GatewayError("; ".join(failures))
+    ensure_gateway(config)
+    code = locate_code()
+    subprocess.Popen(
+        [
+            code,
+            "--user-data-dir",
+            str(USER_DATA),
+            "--extensions-dir",
+            str(EXTENSIONS),
+            "--reuse-window",
+            str(config["workspace"]),
+        ],
+        start_new_session=True,
+    )
+    print(f"OK: opened isolated GLM + DeepSeek workspace: {config['workspace']}")
+    return 0
+
+
+def command_stop(_args: argparse.Namespace) -> int:
+    stop_gateway()
+    print("OK: gateway stopped")
+    return 0
+
+
+def command_uninstall(args: argparse.Namespace) -> int:
+    config = read_config()
+    key_dir = key_path(config, "zai").parent
+    stop_gateway()
+    if config.get("exa_mcp_managed"):
+        mcp_path = Path(str(config.get("workspace") or "")) / ".mcp.json"
+        if mcp_path.is_file():
+            try:
+                mcp = json.loads(mcp_path.read_text(encoding="utf-8"))
+                servers = mcp.get("mcpServers")
+                if isinstance(servers, dict) and servers.get("exa") == EXA_MCP:
+                    del servers["exa"]
+                    if not servers and set(mcp) == {"mcpServers"}:
+                        mcp_path.unlink()
+                    else:
+                        temporary = mcp_path.with_suffix(".json.tmp")
+                        temporary.write_text(json.dumps(mcp, indent=2) + "\n", encoding="utf-8")
+                        os.chmod(temporary, 0o644)
+                        temporary.replace(mcp_path)
+            except (json.JSONDecodeError, AttributeError):
+                print(f"Warning: preserved invalid MCP configuration: {mcp_path}", file=sys.stderr)
+    command = HOME / "bin/glm-gateway"
+    if command.is_symlink() and command.resolve() == Path(__file__).resolve():
+        command.unlink()
+    shutil.rmtree(SHARE, ignore_errors=True)
+    if args.keep_key:
+        CONFIG_FILE.unlink(missing_ok=True)
+        print(f"OK: runtime removed; API keys preserved in {key_dir}")
+    else:
+        shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+        print("OK: runtime and API key removed")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    value = argparse.ArgumentParser(prog="glm-gateway")
+    subparsers = value.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("configure", help=argparse.SUPPRESS).set_defaults(func=command_configure)
+    key = subparsers.add_parser("key", help="store or replace API keys")
+    key.add_argument("provider", choices=[*KEY_SPECS, "all"])
+    key.set_defaults(func=command_key)
+    subparsers.add_parser("status", help="show runtime state").set_defaults(func=command_status)
+    doctor = subparsers.add_parser("doctor", help="verify the installation")
+    doctor.add_argument("--live", action="store_true", help="make a real text request")
+    doctor.add_argument("--image", help="also test an image file")
+    doctor.add_argument("--pdf", help="also test a PDF file")
+    doctor.set_defaults(func=command_doctor)
+    subparsers.add_parser("launch", help="open the isolated VS Code workspace").set_defaults(func=command_launch)
+    subparsers.add_parser("stop", help="stop the local gateway").set_defaults(func=command_stop)
+    uninstall = subparsers.add_parser("uninstall", help="remove the add-on")
+    uninstall.add_argument("--keep-key", action="store_true")
+    uninstall.set_defaults(func=command_uninstall)
+    return value
+
+
+def main() -> int:
+    args = parser().parse_args()
+    try:
+        return int(args.func(args))
+    except (GatewayError, json.JSONDecodeError, OSError, subprocess.CalledProcessError) as error:
+        print(f"NG: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
