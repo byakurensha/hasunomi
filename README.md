@@ -5,7 +5,8 @@
 HASUNOMI is a small starter workspace for the official Claude Code extension
 in Visual Studio Code. It organizes sessions, source material, editable office
 documents, project records, reusable memory, and explicit handoff folders
-without replacing Claude Code itself.
+without replacing Claude Code itself. It includes editable templates for a
+standard A4 document, photo slides, and an exact A4 six-up receipt sheet.
 
 ## Downloads
 
@@ -15,7 +16,7 @@ without replacing Claude Code itself.
 
 Current source versions:
 
-- HASUNOMI: `1.3.0`
+- HASUNOMI: `1.4.0`
 - GLM + DeepSeek Gateway Add-on: `2.0.0`
 
 Release ZIP files are attached to GitHub Releases. The repository source does

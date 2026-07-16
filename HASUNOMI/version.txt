@@ -1,3 +1,15 @@
+HASUNOMI 1.4.0
+
+- Added a simple Japanese six-up receipt template as editable ODG.
+- One A4 landscape sheet is divided exactly into six 148.5 x 70 mm receipts.
+- Fixed cut lines use x=148.5 mm, y=70 mm, and y=140 mm; content stays at
+  least 5 mm inside each edge.
+- The template contains only issue date, recipient, amount, description,
+  receipt statement, issuer name, and optional issuer address/contact.
+- Receipt values can be entered in JSON or left blank for handwriting.
+- Printing requires 100 percent scale without fit-to-page. PDF remains
+  optional and is created only when explicitly requested.
+
 HASUNOMI 1.3.0
 
 - Added a separate seven-stage Repair Process for structural consolidation

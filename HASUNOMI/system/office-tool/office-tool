@@ -98,6 +98,18 @@ def require_presentation_dependencies():
     return draw, style, text, OpenDocumentPresentation, Image, ImageOps, UnidentifiedImageError
 
 
+def require_drawing_dependencies():
+    try:
+        from odf import draw, style, text
+        from odf.opendocument import OpenDocumentDrawing
+    except ImportError as error:
+        raise OfficeError(
+            "ODG receipt sheets require odfpy. "
+            "Run: python3 -m pip install --user odfpy"
+        ) from error
+    return draw, style, text, OpenDocumentDrawing
+
+
 def add_text(parent, text_module, value: str, style_name=None):
     parent.addElement(text_module.P(text=value, stylename=style_name))
 
@@ -256,6 +268,231 @@ SLIDE_GAP = 0.14
 
 def inch(value: float) -> str:
     return f"{value:.4f}in"
+
+
+def mm(value: float) -> str:
+    return f"{value:.3f}mm"
+
+
+RECEIPT_PAGE_WIDTH_MM = 297.0
+RECEIPT_PAGE_HEIGHT_MM = 210.0
+RECEIPT_WIDTH_MM = 148.5
+RECEIPT_HEIGHT_MM = 70.0
+
+
+def add_drawing_text(page, draw, text, frame_style, paragraph_style, value, *, name, x, y, width, height):
+    frame = draw.Frame(
+        name=name,
+        stylename=frame_style,
+        x=mm(x), y=mm(y), width=mm(width), height=mm(height),
+    )
+    box = draw.TextBox()
+    box.addElement(text.P(text=value, stylename=paragraph_style))
+    frame.addElement(box)
+    page.addElement(frame)
+
+
+def add_drawing_lines(page, draw, text, frame_style, paragraph_style, values, *, name, x, y, width, height):
+    frame = draw.Frame(
+        name=name,
+        stylename=frame_style,
+        x=mm(x), y=mm(y), width=mm(width), height=mm(height),
+    )
+    box = draw.TextBox()
+    for value in values:
+        box.addElement(text.P(text=value, stylename=paragraph_style))
+    frame.addElement(box)
+    page.addElement(frame)
+
+
+def receipt_value(item: dict, key: str, blank: str, prefix: str = "") -> str:
+    value = str(item.get(key, "")).strip()
+    return f"{prefix}{value}" if value else blank
+
+
+def cmd_create_receipts(args: argparse.Namespace) -> int:
+    draw, style, text, OpenDocumentDrawing = require_drawing_dependencies()
+    spec_path = Path(args.input).expanduser().resolve()
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    output = Path(args.output).expanduser().resolve()
+    if output.suffix.lower() != ".odg":
+        raise OfficeError("Six-up receipt output must use the .odg extension.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    issuer = spec.get("issuer", {})
+    if not isinstance(issuer, dict):
+        raise OfficeError("Receipt issuer must be an object.")
+    receipts = spec.get("receipts", [])
+    if not isinstance(receipts, list) or len(receipts) > 6:
+        raise OfficeError("Receipt specification supports at most six receipt entries.")
+    receipts = [item if isinstance(item, dict) else {} for item in receipts]
+    receipts.extend({} for _ in range(6 - len(receipts)))
+
+    doc = OpenDocumentDrawing()
+    font_name = "Noto Sans CJK JP" if args.profile == "japanese" else "Arial"
+    bold_face_name = f"{font_name} Bold"
+    quoted_font_family = f"'{font_name}'"
+    for face_name, weight in ((font_name, "normal"), (bold_face_name, "bold")):
+        attributes = {
+            "name": face_name,
+            "fontfamily": quoted_font_family,
+            "fontfamilygeneric": "swiss",
+            "fontpitch": "variable",
+        }
+        if weight == "bold":
+            attributes.update(fontweight="bold", fontadornments="Bold")
+        doc.fontfacedecls.addElement(style.FontFace(**attributes))
+
+    page_layout = style.PageLayout(name="ReceiptSheetPage")
+    page_layout.addElement(style.PageLayoutProperties(
+        pagewidth=mm(RECEIPT_PAGE_WIDTH_MM),
+        pageheight=mm(RECEIPT_PAGE_HEIGHT_MM),
+        printorientation="landscape",
+        margintop="0mm", marginright="0mm", marginbottom="0mm", marginleft="0mm",
+    ))
+    doc.automaticstyles.addElement(page_layout)
+    master = style.MasterPage(name="ReceiptSheetMaster", pagelayoutname=page_layout)
+    doc.masterstyles.addElement(master)
+
+    page_style = style.Style(name="ReceiptSheetBackground", family="drawing-page")
+    page_style.addElement(style.DrawingPageProperties(fill="solid", fillcolor="#FFFFFF"))
+    doc.automaticstyles.addElement(page_style)
+    text_frame = style.Style(name="ReceiptTextFrame", family="graphic")
+    text_frame.addElement(style.GraphicProperties(fill="none", stroke="none"))
+    doc.automaticstyles.addElement(text_frame)
+    cut_style = style.Style(name="ReceiptCutLine", family="graphic")
+    cut_style.addElement(style.GraphicProperties(
+        stroke="solid", strokecolor="#8A8A8A", strokewidth="0.45pt",
+    ))
+    doc.automaticstyles.addElement(cut_style)
+    field_style = style.Style(name="ReceiptFieldLine", family="graphic")
+    field_style.addElement(style.GraphicProperties(
+        stroke="solid", strokecolor="#4A4A4A", strokewidth="0.55pt",
+    ))
+    doc.automaticstyles.addElement(field_style)
+    amount_box_style = style.Style(name="ReceiptAmountBox", family="graphic")
+    amount_box_style.addElement(style.GraphicProperties(
+        fill="none", stroke="solid", strokecolor="#222222", strokewidth="0.75pt",
+    ))
+    doc.automaticstyles.addElement(amount_box_style)
+
+    def paragraph_style(name: str, size: str, weight: str, align: str):
+        target = style.Style(name=name, family="paragraph")
+        target.addElement(style.ParagraphProperties(
+            textalign=align, margintop="0mm", marginbottom="0mm", lineheight="115%",
+        ))
+        target.addElement(style.TextProperties(
+            fontname=bold_face_name if weight == "bold" else font_name,
+            fontnameasian=bold_face_name if weight == "bold" else font_name,
+            fontfamily=quoted_font_family, fontfamilyasian=quoted_font_family,
+            fontstylename="Bold" if weight == "bold" else "Regular",
+            fontstylenameasian="Bold" if weight == "bold" else "Regular",
+            fontsize=size, fontsizeasian=size,
+            fontweight=weight, fontweightasian=weight,
+            language="ja" if args.profile == "japanese" else "en",
+            country="JP" if args.profile == "japanese" else "US",
+            languageasian="ja" if args.profile == "japanese" else "en",
+            countryasian="JP" if args.profile == "japanese" else "US",
+            color="#171717",
+        ))
+        doc.automaticstyles.addElement(target)
+        return target
+
+    title_style = paragraph_style("ReceiptTitle", "14pt", "bold", "left")
+    date_style = paragraph_style("ReceiptDate", "7.5pt", "normal", "right")
+    recipient_style = paragraph_style("ReceiptRecipient", "9.5pt", "normal", "left")
+    amount_style = paragraph_style("ReceiptAmount", "12pt", "bold", "left")
+    body_style = paragraph_style("ReceiptBody", "8pt", "normal", "left")
+    issuer_style = paragraph_style("ReceiptIssuer", "7pt", "normal", "right")
+
+    page = draw.Page(name="receipt-sheet", masterpagename=master, stylename=page_style)
+    page.addElement(draw.Line(
+        name="cut-vertical", stylename=cut_style,
+        x1=mm(RECEIPT_WIDTH_MM), y1="0mm",
+        x2=mm(RECEIPT_WIDTH_MM), y2=mm(RECEIPT_PAGE_HEIGHT_MM),
+    ))
+    for row, y in enumerate((RECEIPT_HEIGHT_MM, RECEIPT_HEIGHT_MM * 2), start=1):
+        page.addElement(draw.Line(
+            name=f"cut-horizontal-{row}", stylename=cut_style,
+            x1="0mm", y1=mm(y), x2=mm(RECEIPT_PAGE_WIDTH_MM), y2=mm(y),
+        ))
+
+    issuer_lines = [str(issuer.get("name", "")).strip() or "発行者名"]
+    issuer_lines.extend(
+        value for value in (
+            str(issuer.get("address", "")).strip(),
+            str(issuer.get("contact", "")).strip(),
+        ) if value
+    )
+    for index, item in enumerate(receipts, start=1):
+        column = (index - 1) % 2
+        row = (index - 1) // 2
+        origin_x = column * RECEIPT_WIDTH_MM
+        origin_y = row * RECEIPT_HEIGHT_MM
+        left = origin_x + 5.0
+        width = RECEIPT_WIDTH_MM - 10.0
+
+        add_drawing_text(
+            page, draw, text, text_frame, title_style, "領収書",
+            name=f"title-{index}", x=left, y=origin_y + 3.2, width=48, height=8,
+        )
+        date_value = receipt_value(
+            item, "date", "発行年月日：　　　年　　月　　日", "発行年月日：",
+        )
+        add_drawing_text(
+            page, draw, text, text_frame, date_style, date_value,
+            name=f"date-{index}", x=origin_x + 77, y=origin_y + 4.1, width=66.5, height=6,
+        )
+
+        recipient = str(item.get("recipient", "")).strip()
+        recipient_text = f"{recipient}　様" if recipient else "様"
+        add_drawing_text(
+            page, draw, text, text_frame, recipient_style, recipient_text,
+            name=f"recipient-{index}", x=left, y=origin_y + 13.5, width=width, height=7,
+        )
+        page.addElement(draw.Line(
+            name=f"recipient-line-{index}", stylename=field_style,
+            x1=mm(left), y1=mm(origin_y + 21.0),
+            x2=mm(origin_x + 117.0), y2=mm(origin_y + 21.0),
+        ))
+
+        page.addElement(draw.Rect(
+            name=f"amount-box-{index}", stylename=amount_box_style,
+            x=mm(left), y=mm(origin_y + 24.0), width=mm(width), height="11mm",
+        ))
+        amount = str(item.get("amount", "")).strip()
+        amount_text = f"金額　￥{amount}" if amount else "金額　￥"
+        add_drawing_text(
+            page, draw, text, text_frame, amount_style, amount_text,
+            name=f"amount-{index}", x=left + 3, y=origin_y + 25.5, width=width - 6, height=7,
+        )
+
+        description = str(item.get("description", "")).strip()
+        description_text = f"但し　{description}" if description else "但し"
+        add_drawing_text(
+            page, draw, text, text_frame, body_style, description_text,
+            name=f"description-{index}", x=left, y=origin_y + 38.2, width=width, height=6,
+        )
+        if not description:
+            page.addElement(draw.Line(
+                name=f"description-line-{index}", stylename=field_style,
+                x1=mm(left + 12), y1=mm(origin_y + 44.7),
+                x2=mm(origin_x + RECEIPT_WIDTH_MM - 5), y2=mm(origin_y + 44.7),
+            ))
+
+        add_drawing_text(
+            page, draw, text, text_frame, body_style, "上記正に領収いたしました。",
+            name=f"statement-{index}", x=left, y=origin_y + 49.0, width=68, height=7,
+        )
+        add_drawing_lines(
+            page, draw, text, text_frame, issuer_style, issuer_lines,
+            name=f"issuer-{index}", x=origin_x + 76, y=origin_y + 48.0, width=67.5, height=17,
+        )
+
+    doc.drawing.addElement(page)
+    doc.save(str(output))
+    print(output)
+    return 0
 
 
 def photo_orientation(width: int, height: int) -> str:
@@ -677,6 +914,31 @@ def cmd_verify(args: argparse.Namespace) -> int:
             failures.append("invalid ZIP container")
         except OfficeError as error:
             failures.append(str(error))
+    elif path.suffix.lower() == ".odg":
+        try:
+            with zipfile.ZipFile(path) as archive:
+                names = set(archive.namelist())
+            if "content.xml" not in names or "styles.xml" not in names:
+                failures.append("invalid ODG package")
+            content = office_content(path)
+            if "office:drawing" not in content:
+                failures.append("ODG has no drawing body")
+            if len(re.findall(r"draw:name=\"amount-box-", content)) != 6:
+                failures.append("ODG does not contain six receipt amount boxes")
+            with tempfile.TemporaryDirectory(prefix="office-render-") as tmp:
+                rendered = render_office_pdf(path, Path(tmp))
+                pages, blank_pages, render_failures = pdf_inspection(rendered)
+                failures.extend(render_failures)
+                if pages is not None and pages != 1:
+                    failures.append(f"rendered receipt sheet has {pages} pages instead of 1")
+                if args.expect_font:
+                    failures.extend(expected_font_failures(
+                        pdf_fonts(rendered), args.expect_font, args.require_bold,
+                    ))
+        except zipfile.BadZipFile:
+            failures.append("invalid ZIP container")
+        except OfficeError as error:
+            failures.append(str(error))
     elif path.suffix.lower() == ".pdf":
         pages, blank_pages, pdf_failures = pdf_inspection(path)
         failures.extend(pdf_failures)
@@ -685,7 +947,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 pdf_fonts(path), args.expect_font, args.require_bold,
             ))
     else:
-        failures.append("verification supports ODT, ODP, and PDF")
+        failures.append("verification supports ODT, ODP, ODG, and PDF")
     if blank_pages and not args.allow_blank_pages:
         failures.append("blank pages: " + ", ".join(map(str, blank_pages)))
     print(json.dumps({
@@ -816,6 +1078,11 @@ def parser() -> argparse.ArgumentParser:
     create_slides.add_argument("output")
     create_slides.add_argument("--profile", choices=("default", "japanese"), default="default")
     create_slides.set_defaults(func=cmd_create_odp)
+    create_receipts = sub.add_parser("create-receipts")
+    create_receipts.add_argument("input")
+    create_receipts.add_argument("output")
+    create_receipts.add_argument("--profile", choices=("default", "japanese"), default="japanese")
+    create_receipts.set_defaults(func=cmd_create_receipts)
     verify = sub.add_parser("verify")
     verify.add_argument("file")
     verify.add_argument("--allow-blank-pages", action="store_true")

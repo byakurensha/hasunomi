@@ -48,6 +48,12 @@ one or two landscape/portrait photos. Photos are kept uncropped by default and
 their embedded copies are orientation-normalized. PDF is created only when
 requested.
 
+The supplied Six-Up Receipt template creates an editable ODG with six exact
+148.5 x 70 mm Japanese receipts on one A4 landscape sheet. It uses only issue
+date, recipient, amount, description, receipt statement, issuer name, and
+optional address/contact. Print at 100 percent without fit-to-page. PDF is
+created only when requested.
+
 OCR creates Markdown text without changing the source file. Japanese setup
 prepares Tesseract jpn+eng and Noto Sans CJK JP for the supplied document
 template. English prepares English OCR without requiring that font. The OCR

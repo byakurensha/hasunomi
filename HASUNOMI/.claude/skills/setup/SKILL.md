@@ -58,6 +58,8 @@ Run in this order.
   PDF is created only when requested. Free design remains unrestricted.
 - The supplied photo-slide workflow creates editable 16:9 ODP decks from phone
   photos using six one- or two-photo layouts. PDF is created only when requested.
+- The supplied receipt workflow creates editable A4 landscape ODG sheets with
+  six exact 148.5 x 70 mm Japanese receipts. Print at 100 percent.
 - OCR creates Markdown without changing the original. Its backend is
   replaceable and the actual backend/fallback is reported.
 - `MEMORY/` stores reusable preferences and lessons. Project state does not go

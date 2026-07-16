@@ -47,6 +47,9 @@
   create editable ODT by default. Create PDF only when explicitly requested.
 - The supplied photo-slide workflow creates an editable 16:9 ODP with one of
   six photo-first layouts. Create PDF only when explicitly requested.
+- The supplied six-up receipt workflow creates an editable A4 landscape ODG
+  with six exact `148.5 x 70 mm` Japanese receipts. Print at 100 percent and
+  create PDF only when explicitly requested.
 - Ask whether to use the supplied template when design intent is unclear.
 - Free design work is not constrained by the bundled template, Noto Sans, ODT,
   LibreOffice, or one production method.

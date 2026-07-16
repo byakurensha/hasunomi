@@ -37,6 +37,7 @@ EXPECTED_SKILLS = (
     "a4-document",
     "meeting-minutes",
     "photo-slide",
+    "receipt-six-up",
     "ocr",
     "memory",
     "lifesaver",
