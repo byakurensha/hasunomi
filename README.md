@@ -22,6 +22,20 @@ Release ZIP files are attached to GitHub Releases. The repository source does
 not contain API keys, credentials, the BYAKURENSHA internal overlay, or private
 runtime configuration.
 
+## Update an existing workspace
+
+1. Download the [latest HASUNOMI ZIP](https://github.com/byakurensha/hasunomi/releases/latest/download/HASUNOMI-latest.zip). Do not manually extract its contents over your existing `GENERAL` folder.
+2. Open your existing `GENERAL` folder as the VS Code root and start a new Claude Code session.
+3. Tell Claude Code where the downloaded ZIP is and use this request:
+
+```text
+Apply this ZIP as a HASUNOMI update. Preserve my existing projects, Memory, and settings, then verify version.txt and doctor after the update.
+```
+
+Claude Code updates only product files. `PROJECTS`, `MEMORY`, local settings,
+source material, and deliverables are preserved. Run the update while your
+normal backup or cloud sync is active for additional protection.
+
 ## Repository layout
 
 ```text
