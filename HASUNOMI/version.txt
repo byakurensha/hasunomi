@@ -1,4 +1,14 @@
-HASUNOMI 1.2.1
+HASUNOMI 1.2.2
+
+- Major Markdown checkpoints are now fully automatic. Project completion
+  commits the active project immediately, and the next Claude Code session
+  start quietly records any remaining allowed Markdown edits, renames,
+  deletions, and new project MASTER files.
+- Automatic checkpoints still obey the Markdown allowlist. Materials, Output,
+  Archives, binary files, and general text files remain backup-owned.
+- Staged renames are recorded as complete old-path deletion and new-path
+  addition pairs, including changes already prepared by VS Code Source Control.
+- VS Code Source Control no longer requires routine user operation.
 
 - Limited workspace Git history to the main Markdown operating files,
   reusable Memory, and each project MASTER.md.

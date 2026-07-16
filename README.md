@@ -15,7 +15,7 @@ without replacing Claude Code itself.
 
 Current source versions:
 
-- HASUNOMI: `1.2.1`
+- HASUNOMI: `1.2.2`
 - GLM + DeepSeek Gateway Add-on: `2.0.0`
 
 Release ZIP files are attached to GitHub Releases. The repository source does

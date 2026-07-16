@@ -301,9 +301,38 @@ def visible_git_paths(root: Path, paths: list[str] | None) -> list[str] | None:
         candidates = run_git(
             root, "ls-files", "--cached", "--others", "--exclude-standard", "--", path
         ).stdout
-        if candidates.strip():
+        historical = run_git(
+            root, "ls-tree", "-r", "--name-only", "HEAD", "--", path, check=False
+        ).stdout
+        if candidates.strip() or historical.strip():
             visible.append(path)
     return visible
+
+
+def stageable_git_paths(root: Path, paths: list[str]) -> list[str]:
+    """Exclude historical paths whose deletion is already staged."""
+    result = []
+    for path in paths:
+        current = run_git(
+            root, "ls-files", "--cached", "--others", "--exclude-standard", "--", path
+        ).stdout
+        if current.strip() or (root / path).exists():
+            result.append(path)
+    return result
+
+
+def changed_git_paths(root: Path) -> list[str]:
+    """Return only changed paths already admitted by Git and .gitignore."""
+    commands = (
+        ("diff", "--no-renames", "--name-only", "-z"),
+        ("diff", "--cached", "--no-renames", "--name-only", "-z"),
+        ("ls-files", "--others", "--exclude-standard", "-z"),
+    )
+    changed: set[str] = set()
+    for arguments in commands:
+        output = run_git(root, *arguments).stdout
+        changed.update(path for path in output.split("\0") if path)
+    return sorted(changed)
 
 
 def git_checkpoint(root: Path, message: str, paths: list[str] | None = None) -> str:
@@ -315,7 +344,11 @@ def git_checkpoint(root: Path, message: str, paths: list[str] | None = None) -> 
     if paths == []:
         return "No major-Markdown changes to commit."
     pathspec = ["--", *paths] if paths else []
-    run_git(root, "add", "-A", *pathspec)
+    add_paths = stageable_git_paths(root, paths) if paths else None
+    if add_paths is None:
+        run_git(root, "add", "-A")
+    elif add_paths:
+        run_git(root, "add", "-A", "--", *add_paths)
     staged = run_git(root, "diff", "--cached", "--quiet", *pathspec, check=False)
     if staged.returncode == 0:
         return "No text changes to commit."
@@ -331,6 +364,15 @@ def git_checkpoint(root: Path, message: str, paths: list[str] | None = None) -> 
         *pathspec,
     )
     return result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "Git checkpoint created."
+
+
+def automatic_git_checkpoint(root: Path) -> str:
+    if not shutil.which("git") or not (root / ".git").is_dir():
+        return ""
+    paths = changed_git_paths(root)
+    if not paths:
+        return ""
+    return git_checkpoint(root, "Automatic General Markdown checkpoint", paths)
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
@@ -354,27 +396,35 @@ def hook_output(context: str) -> None:
 
 def cmd_session_context(args: argparse.Namespace) -> int:
     root = find_root()
+    checkpoint_warning = ""
+    try:
+        automatic_git_checkpoint(root)
+    except (OSError, subprocess.SubprocessError) as error:
+        checkpoint_warning = (
+            " Automatic major-Markdown Git checkpoint failed; continue the session, "
+            f"but inspect Git before final delivery: {error}"
+        )
     try:
         event = json.load(sys.stdin)
     except json.JSONDecodeError:
         event = {}
     session_id = str(event.get("session_id", "")).strip()
     if not session_id:
-        hook_output("No Claude Code session ID was supplied. Do not guess a project association.")
+        hook_output("No Claude Code session ID was supplied. Do not guess a project association." + checkpoint_warning)
         return 0
     project = project_for_session(root, session_id)
     if project:
         relative = project.relative_to(root)
         hook_output(
             f"General session ID: {session_id}. Linked project: {relative}. "
-            f"Read {relative}/MASTER.md before durable work."
+            f"Read {relative}/MASTER.md before durable work." + checkpoint_warning
         )
     else:
         hook_output(
             f"General session ID: {session_id}. No durable project is linked. "
             "Answer ordinary questions without a project. Before accepting source files, "
             "creating deliverables, modifying durable files, or planning later continuation, "
-            "use the project-work skill to create or link one."
+            "use the project-work skill to create or link one." + checkpoint_warning
         )
     return 0
 

@@ -30,8 +30,10 @@ The user manages Claude Code sessions, not internal project folders.
    Desktop `SHAREBOX/`. Use a cloud-delivery skill only when the current
    environment explicitly provides one.
 7. At a meaningful durable checkpoint, use project `complete` once to record
-   the result. Do not run it for conversational steps or intermediate tool
-   calls.
+   the result and create its automatic Git checkpoint. Do not run it for
+   conversational steps or intermediate tool calls. Any allowed Markdown left
+   by rename, deletion, or another route is picked up automatically at the next
+   session start; never ask the user to operate Git manually.
 
 Do not create a project for an ordinary answer with no files, deliverables, or
 durable decision. Do not ask the user to choose a project unless the request

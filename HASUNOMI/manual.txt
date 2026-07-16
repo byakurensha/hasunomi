@@ -72,10 +72,11 @@ files. Run /reload-plugins after a change when Claude Code requests it.
 UPDATES, GIT, AND BACKUP
 
 Ask Claude to apply an update ZIP. The updater replaces product files while
-preserving uppercase user state and local settings. Git records only the main
-Markdown operating files, reusable Memory, and each project MASTER.md. Project
-Materials, Output, Archives, and other files require normal backup or cloud
-sync even when they are text.
+preserving uppercase user state and local settings. Git automatically records
+only the main Markdown operating files, reusable Memory, and each project
+MASTER.md at work completion or the next session start. You do not need to use
+VS Code Source Control. Project Materials, Output, Archives, and other files
+require normal backup or cloud sync even when they are text.
 
 RECOVERY
 

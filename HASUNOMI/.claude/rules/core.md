@@ -72,8 +72,11 @@
   maintenance cost. Completed work entries are evidence, not an automatic
   trigger.
 - Keep credentials and private data out of Git, logs, Memory, and records.
-- Treat Git as a small major-Markdown checkpoint. Never force-add project
-  `Materials/`, `Output/`, or `Archives/`; normal backup owns those files.
+- Treat Git as an automatic, small major-Markdown checkpoint. Project
+  completion records its own project immediately; the next session start
+  quietly records any remaining allowed Markdown changes. Never force-add
+  project `Materials/`, `Output/`, or `Archives/`; normal backup owns those
+  files. The user does not need to operate VS Code Source Control.
 - Announce environment changes before making them. Stop only for credentials,
   payment, administrator authentication, destructive actions, or decisions
   that materially change the user's workflow.

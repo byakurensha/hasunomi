@@ -13,7 +13,7 @@ for item in "${required[@]}"; do
   test -e "$ROOT/$item" || { echo "NG: missing $item" >&2; exit 1; }
 done
 
-test "$(head -n 1 "$ROOT/HASUNOMI/version.txt")" = "HASUNOMI 1.2.1"
+test "$(head -n 1 "$ROOT/HASUNOMI/version.txt")" = "HASUNOMI 1.2.2"
 test "$(head -n 1 "$ROOT/add-ons/glm-deepseek-gateway/version.txt")" = \
   "HASUNOMI GLM + DeepSeek Gateway Add-on 2.0.0"
 
