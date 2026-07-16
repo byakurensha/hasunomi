@@ -29,7 +29,7 @@ runtime configuration.
 3. Tell Claude Code where the downloaded ZIP is and use this request:
 
 ```text
-Apply this ZIP as a HASUNOMI update. Preserve my existing projects, Memory, and settings, then verify version.txt and doctor after the update.
+Use this ZIP to update the GENERAL workspace currently open in VS Code. Preserve my existing projects, Memory, and settings, then verify version.txt and doctor after the update.
 ```
 
 Claude Code updates only product files. `PROJECTS`, `MEMORY`, local settings,
