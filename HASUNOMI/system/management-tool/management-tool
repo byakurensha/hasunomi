@@ -1,0 +1,761 @@
+#!/usr/bin/env python3
+"""Session-first General workspace manager. Python standard library only."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unicodedata
+import zipfile
+from datetime import datetime
+from pathlib import Path
+
+
+def find_root(start: Path | None = None) -> Path:
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / "CLAUDE.md").is_file() and (candidate / ".claude").is_dir():
+            return candidate
+    raise SystemExit("General root not found. Open the General workspace in VS Code.")
+
+
+def now() -> datetime:
+    return datetime.now().astimezone()
+
+
+def slugify(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).strip().lower()
+    normalized = "".join(
+        char if char.isalnum() else "-"
+        for char in normalized
+    )
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
+    if not normalized:
+        raise SystemExit("Project name must contain letters or numbers.")
+    return normalized[:64].rstrip("-")
+
+
+def metadata(path: Path) -> dict[str, str]:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if not lines or lines[0] != "---":
+        return {}
+    result: dict[str, str] = {}
+    for line in lines[1:]:
+        if line == "---":
+            break
+        if ":" in line:
+            key, value = line.split(":", 1)
+            result[key.strip()] = value.strip()
+    return result
+
+
+def set_metadata(path: Path, values: dict[str, str]) -> None:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    body = text
+    current: dict[str, str] = {}
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end >= 0:
+            body = text[end + 5 :]
+            current = metadata(path)
+    current.update(values)
+    order = ["created", "status", "sessions"]
+    keys = [key for key in order if key in current] + sorted(set(current) - set(order))
+    header = "---\n" + "\n".join(f"{key}: {current[key]}" for key in keys) + "\n---\n"
+    path.write_text(header + body.lstrip("\n"), encoding="utf-8")
+
+
+def sessions(path: Path) -> list[str]:
+    value = metadata(path).get("sessions", "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def project_paths(root: Path):
+    projects = root / "PROJECTS"
+    if not projects.is_dir():
+        return
+    for master in sorted(projects.glob("????-??/????-??-??_*/MASTER.md")):
+        yield master.parent
+
+
+def project_for_session(root: Path, session_id: str) -> Path | None:
+    for project in project_paths(root):
+        if session_id in sessions(project / "MASTER.md"):
+            return project
+    return None
+
+
+def resolve_project(root: Path, query: str) -> Path:
+    raw = Path(query).expanduser()
+    if raw.is_absolute() and (raw / "MASTER.md").is_file():
+        candidate = raw.resolve()
+        if root in candidate.parents:
+            return candidate
+    matches = [
+        project
+        for project in project_paths(root)
+        if project.name == query or project.name.endswith("_" + query) or metadata(project / "MASTER.md").get("title") == query
+    ]
+    if len(matches) != 1:
+        raise SystemExit(f"Expected one matching project, found {len(matches)}: {query}")
+    return matches[0]
+
+
+def project_template(title: str, session_id: str) -> str:
+    stamp = now().isoformat(timespec="seconds")
+    return f"""---
+created: {stamp}
+status: active
+sessions: {session_id}
+title: {title}
+---
+# {title}
+
+## Purpose
+
+Not set.
+
+## Current State
+
+- Project created from the current Claude Code session.
+
+## Decisions
+
+- None yet.
+
+## Materials
+
+- None yet.
+
+## Outputs
+
+- None yet.
+
+## Next Action
+
+- Describe the first durable task.
+
+## Work Log
+
+- {stamp}: Project created.
+"""
+
+
+def append_section(path: Path, heading: str, line: str) -> None:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    try:
+        start = lines.index(f"## {heading}") + 1
+    except ValueError:
+        lines.extend(["", f"## {heading}", "", line])
+    else:
+        end = next((index for index in range(start, len(lines)) if lines[index].startswith("## ")), len(lines))
+        while end > start and not lines[end - 1].strip():
+            end -= 1
+        if end > start and lines[end - 1].strip() == "- None yet.":
+            lines[end - 1] = line
+        else:
+            lines.insert(end, line)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def unique_destination(folder: Path, name: str) -> Path:
+    destination = folder / name
+    if not destination.exists():
+        return destination
+    stem, suffix = destination.stem, destination.suffix
+    for number in range(2, 1000):
+        candidate = folder / f"{stem}-{number}{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise SystemExit(f"Could not choose a unique destination for {name}")
+
+
+def exchange_paths() -> dict[str, Path]:
+    desktop = Path.home() / "Desktop"
+    return {
+        "outbox": desktop / "OUTBOX",
+        "sharebox": desktop / "SHAREBOX",
+    }
+
+
+def ensure_exchange() -> dict[str, Path]:
+    paths = exchange_paths()
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+    return paths
+
+
+def file_hash(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def ensure_regular_tree(path: Path) -> None:
+    if path.is_symlink():
+        raise SystemExit(f"Symbolic links are not accepted: {path}")
+    if path.is_file():
+        return
+    if not path.is_dir():
+        raise SystemExit(f"Source file or folder not found: {path}")
+    for child in path.rglob("*"):
+        if child.is_symlink():
+            raise SystemExit(f"Symbolic links are not accepted: {child}")
+        if not child.is_file() and not child.is_dir():
+            raise SystemExit(f"Unsupported item type: {child}")
+
+
+def item_digest(path: Path) -> dict[str, object]:
+    ensure_regular_tree(path)
+    if path.is_file():
+        digest, size = file_hash(path)
+        return {"kind": "file", "sha256": digest, "size": size, "files": 1}
+    combined = hashlib.sha256()
+    total_size = 0
+    files = 0
+    for child in sorted((item for item in path.rglob("*") if item.is_file()), key=lambda item: item.relative_to(path).as_posix()):
+        relative = child.relative_to(path).as_posix()
+        digest, size = file_hash(child)
+        combined.update(f"{relative}\0{digest}\0{size}\n".encode("utf-8"))
+        total_size += size
+        files += 1
+    return {"kind": "directory", "sha256": combined.hexdigest(), "size": total_size, "files": files}
+
+
+def remove_item(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def verified_copy(source: Path, destination: Path, *, remove_source: bool = False) -> dict[str, object]:
+    ensure_regular_tree(source)
+    if destination.exists():
+        raise SystemExit(f"Destination already exists; nothing was overwritten: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.parent / f".{destination.name}.partial-{os.getpid()}"
+    try:
+        source_digest = item_digest(source)
+        if source.is_dir():
+            shutil.copytree(source, temporary)
+        else:
+            shutil.copy2(source, temporary)
+        copied_digest = item_digest(temporary)
+        if source_digest != copied_digest:
+            raise SystemExit("Copy verification failed; the source was preserved.")
+        os.replace(temporary, destination)
+        if remove_source:
+            remove_item(source)
+        return {"destination": str(destination), **copied_digest}
+    finally:
+        if temporary.exists():
+            remove_item(temporary)
+
+
+def validate_item_name(name: str) -> str:
+    if not name or name in {".", ".."} or "/" in name or "\\" in name or name.startswith("."):
+        raise SystemExit("Item name must be one visible file or folder name, not a path.")
+    return name
+
+
+def ensure_base(root: Path) -> None:
+    for relative in ("PROJECTS", "MEMORY/notes", "TEMPLATES"):
+        target = root / relative
+        target.mkdir(parents=True, exist_ok=True)
+        (target / ".gitkeep").touch(exist_ok=True)
+    ensure_exchange()
+    improvement = root / "MEMORY" / "IMPROVEMENT.md"
+    if not improvement.exists():
+        improvement.write_text("# Improvement Checkpoints\n", encoding="utf-8")
+
+
+def run_git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(root), *arguments], check=check, capture_output=True, text=True)
+
+
+def reconcile_git_index(root: Path) -> None:
+    """Stop tracking files newly excluded by the Markdown-only policy."""
+    ignored = run_git(root, "ls-files", "-ci", "--exclude-standard", "-z").stdout
+    paths = [item for item in ignored.split("\0") if item]
+    if paths:
+        run_git(root, "rm", "--cached", "-q", "--ignore-unmatch", "--", *paths)
+
+
+def visible_git_paths(root: Path, paths: list[str] | None) -> list[str] | None:
+    if paths is None:
+        return None
+    visible = []
+    for path in paths:
+        candidates = run_git(
+            root, "ls-files", "--cached", "--others", "--exclude-standard", "--", path
+        ).stdout
+        if candidates.strip():
+            visible.append(path)
+    return visible
+
+
+def git_checkpoint(root: Path, message: str, paths: list[str] | None = None) -> str:
+    if not shutil.which("git"):
+        return "Git unavailable."
+    if not (root / ".git").is_dir():
+        run_git(root, "init")
+    paths = visible_git_paths(root, paths)
+    if paths == []:
+        return "No major-Markdown changes to commit."
+    pathspec = ["--", *paths] if paths else []
+    run_git(root, "add", "-A", *pathspec)
+    staged = run_git(root, "diff", "--cached", "--quiet", *pathspec, check=False)
+    if staged.returncode == 0:
+        return "No text changes to commit."
+    result = run_git(
+        root,
+        "-c",
+        "user.name=General Workspace",
+        "-c",
+        "user.email=general@local",
+        "commit",
+        "-m",
+        message,
+        *pathspec,
+    )
+    return result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "Git checkpoint created."
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    root = find_root()
+    ensure_base(root)
+    if (root / ".git").is_dir():
+        reconcile_git_index(root)
+    print(git_checkpoint(root, "Initial General workspace setup"))
+    print("General workspace structure and major-Markdown Git history are ready.")
+    return 0
+
+
+def hook_output(context: str) -> None:
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": context,
+        }
+    }, ensure_ascii=False))
+
+
+def cmd_session_context(args: argparse.Namespace) -> int:
+    root = find_root()
+    try:
+        event = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        event = {}
+    session_id = str(event.get("session_id", "")).strip()
+    if not session_id:
+        hook_output("No Claude Code session ID was supplied. Do not guess a project association.")
+        return 0
+    project = project_for_session(root, session_id)
+    if project:
+        relative = project.relative_to(root)
+        hook_output(
+            f"General session ID: {session_id}. Linked project: {relative}. "
+            f"Read {relative}/MASTER.md before durable work."
+        )
+    else:
+        hook_output(
+            f"General session ID: {session_id}. No durable project is linked. "
+            "Answer ordinary questions without a project. Before accepting source files, "
+            "creating deliverables, modifying durable files, or planning later continuation, "
+            "use the project-work skill to create or link one."
+        )
+    return 0
+
+
+def cmd_project_start(args: argparse.Namespace) -> int:
+    root = find_root()
+    existing = project_for_session(root, args.session)
+    if existing:
+        print(existing)
+        return 0
+    slug = slugify(args.name)
+    timestamp = now()
+    month = root / "PROJECTS" / timestamp.strftime("%Y-%m")
+    month.mkdir(parents=True, exist_ok=True)
+    base = timestamp.strftime("%Y-%m-%d_") + slug
+    project = unique_destination(month, base)
+    project.mkdir()
+    for folder in ("Materials", "Output", "Archives"):
+        target = project / folder
+        target.mkdir()
+        (target / ".gitkeep").touch()
+    (project / "MASTER.md").write_text(project_template(args.title.strip(), args.session), encoding="utf-8")
+    print(project)
+    return 0
+
+
+def cmd_project_list(args: argparse.Namespace) -> int:
+    root = find_root()
+    rows = []
+    for project in project_paths(root):
+        meta = metadata(project / "MASTER.md")
+        rows.append({
+            "project": str(project.relative_to(root)),
+            "title": meta.get("title", project.name),
+            "status": meta.get("status", "unknown"),
+        })
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_project_status(args: argparse.Namespace) -> int:
+    root = find_root()
+    project = project_for_session(root, args.session)
+    print(json.dumps({
+        "session": args.session,
+        "project": str(project.relative_to(root)) if project else None,
+    }, ensure_ascii=False, indent=2))
+    return 0 if project else 1
+
+
+def cmd_project_link(args: argparse.Namespace) -> int:
+    root = find_root()
+    current = project_for_session(root, args.session)
+    if current:
+        raise SystemExit(f"Session is already linked to {current.relative_to(root)}")
+    project = resolve_project(root, args.project)
+    master = project / "MASTER.md"
+    linked = sessions(master)
+    if args.session not in linked:
+        linked.append(args.session)
+        set_metadata(master, {"sessions": ",".join(linked)})
+        append_section(master, "Work Log", f"- {now().isoformat(timespec='seconds')}: Linked a resumed Claude Code session.")
+    print(project)
+    return 0
+
+
+def require_session_project(root: Path, session_id: str) -> Path:
+    project = project_for_session(root, session_id)
+    if not project:
+        raise SystemExit("No durable project is linked to this session.")
+    return project
+
+
+def cmd_project_intake(args: argparse.Namespace) -> int:
+    root = find_root()
+    project = require_session_project(root, args.session)
+    copied = []
+    for raw in args.sources:
+        source = Path(raw).expanduser().resolve()
+        if not source.is_file():
+            raise SystemExit(f"Source file not found: {source}")
+        destination = unique_destination(project / "Materials", source.name)
+        shutil.copy2(source, destination)
+        copied.append(str(destination))
+        append_section(project / "MASTER.md", "Materials", f"- `{destination.name}` copied from supplied source.")
+    print(json.dumps(copied, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_project_deliver(args: argparse.Namespace) -> int:
+    root = find_root()
+    project = require_session_project(root, args.session)
+    output_root = (project / "Output").resolve()
+    source = (output_root / args.file).resolve()
+    if not source.is_file() or output_root not in source.parents:
+        raise SystemExit("Delivery file must exist inside the linked project's Output folder.")
+    destination = ensure_exchange()["outbox"] / source.name
+    result = verified_copy(source, destination)
+    append_section(project / "MASTER.md", "Outputs", f"- `{source.name}` delivered to Desktop `OUTBOX/`.")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_project_share(args: argparse.Namespace) -> int:
+    root = find_root()
+    project = require_session_project(root, args.session)
+    output_root = (project / "Output").resolve()
+    source = (output_root / args.file).resolve()
+    if not source.is_file() or source.parent != output_root:
+        raise SystemExit("Shared file must be a direct file in the linked project's Output folder.")
+    destination = ensure_exchange()["sharebox"] / source.name
+    result = verified_copy(source, destination)
+    append_section(project / "MASTER.md", "Outputs", f"- `{source.name}` copied to Desktop `SHAREBOX/`.")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_project_receive(args: argparse.Namespace) -> int:
+    root = find_root()
+    project = require_session_project(root, args.session)
+    item_name = validate_item_name(args.item)
+    source = ensure_exchange()["sharebox"] / item_name
+    destination = project / "Materials" / item_name
+    result = verified_copy(source, destination, remove_source=True)
+    append_section(project / "MASTER.md", "Materials", f"- `{item_name}` received from Desktop `SHAREBOX/`.")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def unchecked_improvements(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.startswith("- [ ] "))
+
+
+def cmd_project_complete(args: argparse.Namespace) -> int:
+    root = find_root()
+    project = require_session_project(root, args.session)
+    stamp = now().isoformat(timespec="seconds")
+    result = args.result.strip() or "Durable work unit completed."
+    append_section(project / "MASTER.md", "Work Log", f"- {stamp}: {result}")
+    if args.close:
+        set_metadata(project / "MASTER.md", {"status": "complete"})
+    improvement = root / "MEMORY" / "IMPROVEMENT.md"
+    with improvement.open("a", encoding="utf-8") as stream:
+        stream.write(f"- [ ] {stamp} | {project.relative_to(root)} | {result}\n")
+    relative_project = str(project.relative_to(root))
+    print(git_checkpoint(
+        root,
+        f"Complete work: {project.name}",
+        [relative_project, "MEMORY/IMPROVEMENT.md"],
+    ))
+    print(json.dumps({
+        "project": relative_project,
+        "unreviewed_improvement_evidence": unchecked_improvements(improvement),
+    }, ensure_ascii=False))
+    return 0
+
+
+def cmd_improvement_done(args: argparse.Namespace) -> int:
+    root = find_root()
+    path = root / "MEMORY" / "IMPROVEMENT.md"
+    text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else "# Improvement Checkpoints\n"
+    text = text.replace("- [ ] ", "- [x] ")
+    text = text.rstrip() + f"\n\nReviewed: {now().isoformat(timespec='seconds')}\n"
+    path.write_text(text, encoding="utf-8")
+    changed = []
+    for value in args.changed:
+        relative = Path(value)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise SystemExit("Improvement changed paths must stay inside General.")
+        changed.append(str(relative))
+    print(git_checkpoint(
+        root,
+        "Complete improvement checkpoint",
+        ["MEMORY/IMPROVEMENT.md", *changed],
+    ))
+    return 0
+
+
+def cmd_memory_search(args: argparse.Namespace) -> int:
+    root = find_root()
+    query = args.query.casefold()
+    matches = []
+    paths = [root / "MEMORY" / "MEMORY.md", *sorted((root / "MEMORY" / "notes").glob("*.md"))]
+    for path in paths:
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            if query in line.casefold():
+                matches.append({"file": str(path.relative_to(root)), "line": number, "text": line.strip()})
+    print(json.dumps({"query": args.query, "matches": matches[:50]}, ensure_ascii=False, indent=2))
+    return 0 if matches else 1
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    root = find_root()
+    failures = []
+    required = [
+        "CLAUDE.md", "ROLE.md", "SETTINGS.md", "PROJECTS",
+        "MEMORY/MEMORY.md", "MEMORY/IMPROVEMENT.md", "TEMPLATES",
+        ".claude/settings.json", ".claude/rules/core.md",
+        ".claude/skills/setup/SKILL.md", ".claude/skills/project-work/SKILL.md",
+        ".claude/skills/share-delivery/SKILL.md",
+        "system/management-tool/management-tool", "system/office-tool/office-tool",
+    ]
+    for item in required:
+        if not (root / item).exists():
+            failures.append(f"missing: {item}")
+    for retired in (".hasunomi", "skills", "rules", "PROJECTS/COMMON", "PROJECTS/UPDATE"):
+        if (root / retired).exists():
+            failures.append(f"retired item remains: {retired}")
+    for retired in ("INBOX", "OUTBOX"):
+        if (root / retired).exists():
+            failures.append(f"retired General-local exchange remains: {retired}")
+    for path in ensure_exchange().values():
+        if not path.is_dir():
+            failures.append(f"missing Desktop exchange directory: {path}")
+    if not (root / ".git").is_dir():
+        failures.append("Git is not initialized; run setup")
+    else:
+        tracked = run_git(root, "ls-files", "-z").stdout.split("\0")
+        forbidden = [
+            path for path in tracked if path and
+            any(part in {"Materials", "Output", "Archives"} for part in Path(path).parts)
+        ]
+        if forbidden:
+            failures.append(
+                f"Git tracks {len(forbidden)} backup-owned project payload path(s); run setup"
+            )
+    settings = root / "SETTINGS.md"
+    if settings.is_file() and "Not set" in settings.read_text(encoding="utf-8", errors="replace"):
+        failures.append("SETTINGS.md still contains Not set")
+    owners: dict[str, str] = {}
+    for project in project_paths(root):
+        expected = {"MASTER.md", "Materials", "Output", "Archives"}
+        actual = {item.name for item in project.iterdir()}
+        missing = expected - actual
+        if missing:
+            failures.append(f"{project.relative_to(root)} missing: {', '.join(sorted(missing))}")
+        if "CLAUDE.md" in actual or "INBOX" in actual or "OUTBOX" in actual:
+            failures.append(f"{project.relative_to(root)} contains retired project-local entry")
+        for session_id in sessions(project / "MASTER.md"):
+            if session_id in owners:
+                failures.append(f"session {session_id} linked to multiple projects")
+            owners[session_id] = str(project.relative_to(root))
+    try:
+        settings_json = json.loads((root / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        if "SessionStart" not in settings_json.get("hooks", {}):
+            failures.append("SessionStart hook is not configured")
+    except (OSError, json.JSONDecodeError):
+        failures.append(".claude/settings.json is invalid")
+    print(json.dumps({
+        "root": str(root),
+        "ok": not failures,
+        "failures": failures,
+        "projects": len(list(project_paths(root))),
+        "unreviewed_improvement_evidence": unchecked_improvements(root / "MEMORY" / "IMPROVEMENT.md"),
+    }, ensure_ascii=False, indent=2))
+    return 1 if failures else 0
+
+
+def safe_member(name: str) -> bool:
+    path = Path(name)
+    return not path.is_absolute() and ".." not in path.parts
+
+
+def replace_path(source: Path, destination: Path, backup: Path) -> None:
+    if destination.exists():
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(destination), str(backup))
+    if source.is_dir():
+        shutil.copytree(source, destination)
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    candidates = [destination] if destination.is_file() else destination.rglob("*")
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            with candidate.open("rb") as stream:
+                is_script = stream.read(2) == b"#!"
+        except OSError:
+            continue
+        if is_script:
+            candidate.chmod(candidate.stat().st_mode | 0o111)
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    root = find_root()
+    source_zip = Path(args.zip).expanduser().resolve()
+    if not source_zip.is_file() or not zipfile.is_zipfile(source_zip):
+        raise SystemExit("Update input must be a valid ZIP file.")
+    with tempfile.TemporaryDirectory(prefix="general-update-") as tmp:
+        stage = Path(tmp)
+        with zipfile.ZipFile(source_zip) as archive:
+            if any(not safe_member(name) for name in archive.namelist()):
+                raise SystemExit("Unsafe path found in update ZIP.")
+            archive.extractall(stage)
+        candidates = [stage, *[item for item in stage.iterdir() if item.is_dir()]]
+        payload = next((item for item in candidates if (item / "UPDATE.md").is_file()), None)
+        if payload is None:
+            raise SystemExit("UPDATE.md is required at the update payload root.")
+        stamp = now().strftime("%Y%m%d-%H%M%S")
+        backup_root = root / "UPDATES" / stamp
+        replaceable = [
+            ".claude/settings.json", ".claude/rules", ".claude/skills",
+            "system", ".gitignore", "manual.txt", "マニュアル.txt", "version.txt",
+        ]
+        updated_paths = []
+        for relative in replaceable:
+            incoming = payload / relative
+            if incoming.exists():
+                replace_path(incoming, root / relative, backup_root / relative)
+                updated_paths.append(relative)
+        backup_root.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(payload / "UPDATE.md", root / "UPDATES" / "LAST-UPDATE.md")
+    print(git_checkpoint(root, "Apply General workspace update", updated_paths))
+    print("Product files updated. Uppercase user state and local settings were preserved.")
+    return cmd_doctor(args)
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(prog="management-tool")
+    sub = result.add_subparsers(dest="command", required=True)
+    sub.add_parser("setup").set_defaults(func=cmd_setup)
+    sub.add_parser("session-context").set_defaults(func=cmd_session_context)
+
+    project = sub.add_parser("project")
+    project_sub = project.add_subparsers(dest="project_command", required=True)
+    start = project_sub.add_parser("start")
+    start.add_argument("--session", required=True)
+    start.add_argument("--name", required=True)
+    start.add_argument("--title", required=True)
+    start.set_defaults(func=cmd_project_start)
+    project_sub.add_parser("list").set_defaults(func=cmd_project_list)
+    status = project_sub.add_parser("status")
+    status.add_argument("--session", required=True)
+    status.set_defaults(func=cmd_project_status)
+    link = project_sub.add_parser("link")
+    link.add_argument("--session", required=True)
+    link.add_argument("--project", required=True)
+    link.set_defaults(func=cmd_project_link)
+    intake = project_sub.add_parser("intake")
+    intake.add_argument("--session", required=True)
+    intake.add_argument("sources", nargs="+")
+    intake.set_defaults(func=cmd_project_intake)
+    deliver = project_sub.add_parser("deliver")
+    deliver.add_argument("--session", required=True)
+    deliver.add_argument("--file", required=True)
+    deliver.set_defaults(func=cmd_project_deliver)
+    share = project_sub.add_parser("share")
+    share.add_argument("--session", required=True)
+    share.add_argument("--file", required=True)
+    share.set_defaults(func=cmd_project_share)
+    receive = project_sub.add_parser("receive")
+    receive.add_argument("--session", required=True)
+    receive.add_argument("--item", required=True)
+    receive.set_defaults(func=cmd_project_receive)
+    complete = project_sub.add_parser("complete")
+    complete.add_argument("--session", required=True)
+    complete.add_argument("--result", default="")
+    complete.add_argument("--close", action="store_true")
+    complete.set_defaults(func=cmd_project_complete)
+
+    memory = sub.add_parser("memory")
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    search = memory_sub.add_parser("search")
+    search.add_argument("query")
+    search.set_defaults(func=cmd_memory_search)
+    improvement_done = sub.add_parser("improvement-done")
+    improvement_done.add_argument("--changed", action="append", default=[])
+    improvement_done.set_defaults(func=cmd_improvement_done)
+    sub.add_parser("doctor").set_defaults(func=cmd_doctor)
+    update = sub.add_parser("update")
+    update.add_argument("zip")
+    update.set_defaults(func=cmd_update)
+    return result
+
+
+if __name__ == "__main__":
+    arguments = parser().parse_args()
+    raise SystemExit(arguments.func(arguments))

@@ -1,0 +1,848 @@
+#!/usr/bin/env python3
+"""Portable document entrypoint bundled with HASUNOMI."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import io
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unicodedata
+import zipfile
+from pathlib import Path
+
+
+class OfficeError(Exception):
+    pass
+
+
+def executable(*names: str) -> str | None:
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in (
+        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        "/Applications/LibreOffice.app/Contents/MacOS/libreoffice",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    try:
+        import odf  # noqa: F401
+        odfpy = True
+    except ImportError:
+        odfpy = False
+    try:
+        import PIL  # noqa: F401
+        pillow = True
+    except ImportError:
+        pillow = False
+    result = {
+        "odfpy": odfpy,
+        "pillow": pillow,
+        "libreoffice": executable("soffice", "libreoffice"),
+        "tesseract": executable("tesseract"),
+        "pdftotext": executable("pdftotext"),
+        "pdfinfo": executable("pdfinfo"),
+        "pdftoppm": executable("pdftoppm"),
+        "noto_sans_cjk_jp_registered": font_available("Noto Sans CJK JP"),
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if odfpy and pillow else 1
+
+
+def font_available(family: str) -> bool:
+    matcher = executable("fc-match")
+    if matcher:
+        result = subprocess.run([matcher, "-f", "%{family}\n", family], capture_output=True, text=True)
+        return result.returncode == 0 and family.casefold() in result.stdout.casefold()
+    roots = [Path.home() / "Library" / "Fonts", Path("/Library/Fonts"), Path("/usr/share/fonts")]
+    needle = re.sub(r"[^a-z0-9]", "", family.casefold())
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and needle in re.sub(r"[^a-z0-9]", "", path.name.casefold()):
+                return True
+    return False
+
+
+def require_odfpy():
+    try:
+        from odf import style, table, text
+        from odf.opendocument import OpenDocumentText
+    except ImportError as error:
+        raise OfficeError("odfpy is required. Run: python3 -m pip install --user odfpy") from error
+    return style, table, text, OpenDocumentText
+
+
+def require_presentation_dependencies():
+    try:
+        from odf import draw, style, text
+        from odf.opendocument import OpenDocumentPresentation
+        from PIL import Image, ImageOps, UnidentifiedImageError
+    except ImportError as error:
+        raise OfficeError(
+            "ODP photo slides require odfpy and Pillow. "
+            "Run: python3 -m pip install --user odfpy Pillow"
+        ) from error
+    return draw, style, text, OpenDocumentPresentation, Image, ImageOps, UnidentifiedImageError
+
+
+def add_text(parent, text_module, value: str, style_name=None):
+    parent.addElement(text_module.P(text=value, stylename=style_name))
+
+
+def document_text_properties(style_module, font_name: str, size: str, weight: str):
+    return style_module.TextProperties(
+        fontname=font_name,
+        fontnameasian=font_name,
+        fontnamecomplex=font_name,
+        fontsize=size,
+        fontsizeasian=size,
+        fontsizecomplex=size,
+        fontweight=weight,
+        fontweightasian=weight,
+        fontweightcomplex=weight,
+    )
+
+
+def display_width(value: object) -> int:
+    return sum(
+        2 if unicodedata.east_asian_width(character) in {"W", "F", "A"} else 1
+        for character in str(value)
+    )
+
+
+def table_column_widths(rows: list[list[object]], total_width_mm: float = 174.0) -> list[float]:
+    column_count = max(len(row) for row in rows)
+    natural = [4] * column_count
+    for row in rows:
+        for index, value in enumerate(row):
+            natural[index] = max(natural[index], min(display_width(value), 48))
+
+    if column_count == 2 and natural[0] * 2 <= natural[1]:
+        shares = [0.28, 0.72]
+    else:
+        minimum_share = min(0.16, 0.8 / column_count)
+        remaining = 1.0 - minimum_share * column_count
+        natural_total = sum(natural)
+        shares = [minimum_share + remaining * value / natural_total for value in natural]
+    return [round(total_width_mm * share, 2) for share in shares]
+
+
+def cmd_create_odt(args: argparse.Namespace) -> int:
+    style, table, text, OpenDocumentText = require_odfpy()
+    spec = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    output = Path(args.output).expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    doc = OpenDocumentText()
+    font_name = "Noto Sans CJK JP" if args.profile == "japanese" else "Arial"
+    doc.fontfacedecls.addElement(style.FontFace(
+        name=font_name,
+        fontfamily=font_name,
+        fontfamilygeneric="swiss",
+        fontpitch="variable",
+    ))
+
+    page = style.PageLayout(name="A4Page")
+    page.addElement(style.PageLayoutProperties(
+        pagewidth="210mm", pageheight="297mm", printorientation="portrait",
+        margintop="20mm", marginright="18mm", marginbottom="18mm", marginleft="18mm"))
+    doc.automaticstyles.addElement(page)
+    master = style.MasterPage(name="A4", pagelayoutname=page)
+    doc.masterstyles.addElement(master)
+
+    default = style.Style(name="Body", family="paragraph")
+    default.addElement(document_text_properties(style, font_name, "10.5pt", "normal"))
+    default.addElement(style.ParagraphProperties(lineheight="155%", marginbottom="3mm"))
+    doc.styles.addElement(default)
+    title = style.Style(name="Title", family="paragraph", parentstylename=default, masterpagename=master)
+    title.addElement(document_text_properties(style, font_name, "18pt", "bold"))
+    title.addElement(style.ParagraphProperties(marginbottom="4mm", paddingbottom="2mm", borderbottom="0.8pt solid #222222"))
+    doc.styles.addElement(title)
+    heading1 = style.Style(name="Heading1", family="paragraph", parentstylename=default)
+    heading1.addElement(document_text_properties(style, font_name, "13pt", "bold"))
+    heading1.addElement(style.ParagraphProperties(
+        margintop="5mm", marginbottom="2.5mm", paddingbottom="1.2mm",
+        borderbottom="0.5pt solid #777777"))
+    doc.styles.addElement(heading1)
+    heading2 = style.Style(name="Heading2", family="paragraph", parentstylename=default)
+    heading2.addElement(document_text_properties(style, font_name, "11.5pt", "bold"))
+    heading2.addElement(style.ParagraphProperties(margintop="3.5mm", marginbottom="1.5mm"))
+    doc.styles.addElement(heading2)
+    heading3 = style.Style(name="Heading3", family="paragraph", parentstylename=default)
+    heading3.addElement(document_text_properties(style, font_name, "10.5pt", "bold"))
+    heading3.addElement(style.ParagraphProperties(margintop="2.5mm", marginbottom="1mm"))
+    doc.styles.addElement(heading3)
+    headings = {1: heading1, 2: heading2, 3: heading3}
+    table_text = style.Style(name="TableText", family="paragraph", parentstylename=default)
+    table_text.addElement(document_text_properties(style, font_name, "10pt", "normal"))
+    table_text.addElement(style.ParagraphProperties(lineheight="140%", marginbottom="0mm"))
+    doc.styles.addElement(table_text)
+    table_head_text = style.Style(name="TableHeadText", family="paragraph", parentstylename=table_text)
+    table_head_text.addElement(document_text_properties(style, font_name, "10pt", "bold"))
+    doc.styles.addElement(table_head_text)
+    cell = style.Style(name="TableCell", family="table-cell")
+    cell.addElement(style.TableCellProperties(border="0.5pt solid #888888", padding="2mm", verticalalign="middle"))
+    doc.automaticstyles.addElement(cell)
+    cell_head = style.Style(name="TableHead", family="table-cell")
+    cell_head.addElement(style.TableCellProperties(
+        backgroundcolor="#F2F2F2", border="0.5pt solid #888888",
+        padding="2mm", verticalalign="middle"))
+    doc.automaticstyles.addElement(cell_head)
+
+    add_text(doc.text, text, str(spec.get("title", "Untitled")), title)
+    for block_index, block in enumerate(spec.get("blocks", []), start=1):
+        kind = block.get("type")
+        if kind == "heading":
+            try:
+                level = int(block.get("level", 2))
+            except (TypeError, ValueError):
+                level = 2
+            add_text(doc.text, text, str(block.get("text", "")), headings.get(level, heading3))
+        elif kind == "paragraph":
+            add_text(doc.text, text, str(block.get("text", "")), default)
+        elif kind == "list":
+            listing = text.List()
+            for item in block.get("items", []):
+                entry = text.ListItem()
+                add_text(entry, text, str(item), default)
+                listing.addElement(entry)
+            doc.text.addElement(listing)
+        elif kind == "table":
+            rows = block.get("rows", [])
+            if not rows:
+                continue
+            grid = table.Table(name="Table")
+            for column_index, width in enumerate(table_column_widths(rows), start=1):
+                column_style = style.Style(
+                    name=f"TableColumn{block_index}_{column_index}", family="table-column")
+                column_style.addElement(style.TableColumnProperties(columnwidth=f"{width}mm"))
+                doc.automaticstyles.addElement(column_style)
+                grid.addElement(table.TableColumn(stylename=column_style))
+            for row_index, values in enumerate(rows):
+                row = table.TableRow()
+                for value in values:
+                    target = table.TableCell(stylename=cell_head if row_index == 0 else cell)
+                    add_text(target, text, str(value), table_head_text if row_index == 0 else table_text)
+                    row.addElement(target)
+                grid.addElement(row)
+            doc.text.addElement(grid)
+        else:
+            raise OfficeError(f"Unsupported block type: {kind}")
+    doc.save(str(output))
+    print(output)
+    return 0
+
+
+SLIDE_WIDTH = 13.333333
+SLIDE_HEIGHT = 7.5
+SLIDE_LEFT = 0.4375
+SLIDE_RIGHT = 0.4375
+SLIDE_PHOTO_TOP = 0.94
+SLIDE_BOTTOM = 0.38
+SLIDE_GAP = 0.14
+
+
+def inch(value: float) -> str:
+    return f"{value:.4f}in"
+
+
+def photo_orientation(width: int, height: int) -> str:
+    return "landscape" if width >= height else "portrait"
+
+
+def convert_phone_photo(source: Path, destination: Path) -> Path | None:
+    converter = executable("magick", "convert")
+    if converter:
+        command = [converter]
+        if Path(converter).name == "magick":
+            command.append(str(source))
+        else:
+            command.append(str(source))
+        command.extend(["-auto-orient", str(destination)])
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0 and destination.is_file():
+            return destination
+    sips = executable("sips")
+    if sips:
+        result = subprocess.run(
+            [sips, "-s", "format", "jpeg", str(source), "--out", str(destination)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and destination.is_file():
+            return destination
+    return None
+
+
+def normalized_photo(source: Path, work: Path, Image, ImageOps, UnidentifiedImageError):
+    if not source.is_file():
+        raise OfficeError(f"Photo does not exist: {source}")
+    candidate = source
+    try:
+        image = Image.open(candidate)
+        image.load()
+    except (UnidentifiedImageError, OSError):
+        converted = convert_phone_photo(source, work / f"{source.stem}.jpg")
+        if not converted:
+            raise OfficeError(
+                f"Unsupported photo format: {source}. Install an HEIC-capable ImageMagick "
+                "or convert the photo to JPEG/PNG."
+            )
+        candidate = converted
+        image = Image.open(candidate)
+        image.load()
+    image = ImageOps.exif_transpose(image)
+    if image.mode != "RGB":
+        background = Image.new("RGB", image.size, "white")
+        if "A" in image.getbands():
+            background.paste(image, mask=image.getchannel("A"))
+        else:
+            background.paste(image)
+        image = background
+    payload = io.BytesIO()
+    image.save(payload, format="JPEG", quality=92, optimize=True)
+    return payload.getvalue(), image.width, image.height
+
+
+def resolved_photo_path(spec_path: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    return path.resolve() if path.is_absolute() else (spec_path.parent / path).resolve()
+
+
+def inferred_slide_layout(orientations: list[str]) -> str:
+    if orientations == ["landscape"]:
+        return "landscape-single"
+    if orientations == ["portrait"]:
+        return "portrait-single"
+    if orientations == ["landscape", "landscape"]:
+        return "landscape-landscape"
+    if orientations == ["portrait", "landscape"]:
+        return "portrait-landscape"
+    if orientations == ["landscape", "portrait"]:
+        return "landscape-portrait"
+    if orientations == ["portrait", "portrait"]:
+        return "portrait-portrait"
+    raise OfficeError("Photo slides support one or two photos per slide.")
+
+
+def layout_cells(layout: str) -> list[tuple[float, float, float, float]]:
+    width = SLIDE_WIDTH - SLIDE_LEFT - SLIDE_RIGHT
+    height = SLIDE_HEIGHT - SLIDE_PHOTO_TOP - SLIDE_BOTTOM
+    if layout in ("landscape-single", "portrait-single"):
+        return [(SLIDE_LEFT, SLIDE_PHOTO_TOP, width, height)]
+    usable = width - SLIDE_GAP
+    if layout in ("landscape-landscape", "portrait-portrait"):
+        left_width = usable / 2
+    elif layout == "portrait-landscape":
+        left_width = usable * 0.36
+    elif layout == "landscape-portrait":
+        left_width = usable * 0.64
+    else:
+        raise OfficeError(f"Unsupported photo-slide layout: {layout}")
+    right_width = usable - left_width
+    return [
+        (SLIDE_LEFT, SLIDE_PHOTO_TOP, left_width, height),
+        (SLIDE_LEFT + left_width + SLIDE_GAP, SLIDE_PHOTO_TOP, right_width, height),
+    ]
+
+
+def contained_box(cell, image_width: int, image_height: int):
+    x, y, width, height = cell
+    scale = min(width / image_width, height / image_height)
+    rendered_width = image_width * scale
+    rendered_height = image_height * scale
+    return (
+        x + (width - rendered_width) / 2,
+        y + (height - rendered_height) / 2,
+        rendered_width,
+        rendered_height,
+    )
+
+
+def add_slide_text(page, draw, text, frame_style, paragraph_style, value, *, name, x, y, width, height):
+    frame = draw.Frame(
+        name=name,
+        stylename=frame_style,
+        x=inch(x), y=inch(y), width=inch(width), height=inch(height),
+    )
+    box = draw.TextBox()
+    box.addElement(text.P(text=value, stylename=paragraph_style))
+    frame.addElement(box)
+    page.addElement(frame)
+
+
+def cmd_create_odp(args: argparse.Namespace) -> int:
+    (
+        draw, style, text, OpenDocumentPresentation,
+        Image, ImageOps, UnidentifiedImageError,
+    ) = require_presentation_dependencies()
+    spec_path = Path(args.input).expanduser().resolve()
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    slides = spec.get("slides", [])
+    if not slides:
+        raise OfficeError("Photo-slide specification has no slides.")
+    output = Path(args.output).expanduser().resolve()
+    if output.suffix.lower() != ".odp":
+        raise OfficeError("Photo-slide output must use the .odp extension.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    doc = OpenDocumentPresentation()
+    font_name = "Noto Sans CJK JP" if args.profile == "japanese" else "Arial"
+    bold_face_name = f"{font_name} Bold"
+    quoted_font_family = f"'{font_name}'"
+    doc.fontfacedecls.addElement(style.FontFace(
+        name=font_name,
+        fontfamily=quoted_font_family,
+        fontfamilygeneric="swiss",
+        fontpitch="variable",
+    ))
+    doc.fontfacedecls.addElement(style.FontFace(
+        name=bold_face_name,
+        fontfamily=quoted_font_family,
+        fontfamilygeneric="swiss",
+        fontpitch="variable",
+        fontweight="bold",
+        fontadornments="Bold",
+    ))
+    page_layout = style.PageLayout(name="PhotoSlidePage")
+    page_layout.addElement(style.PageLayoutProperties(
+        pagewidth=inch(SLIDE_WIDTH),
+        pageheight=inch(SLIDE_HEIGHT),
+        printorientation="landscape",
+        margintop="0in", marginright="0in", marginbottom="0in", marginleft="0in",
+    ))
+    doc.automaticstyles.addElement(page_layout)
+    master = style.MasterPage(name="PhotoSlideMaster", pagelayoutname=page_layout)
+    doc.masterstyles.addElement(master)
+
+    page_style = style.Style(name="PhotoSlideBackground", family="drawing-page")
+    page_style.addElement(style.DrawingPageProperties(fill="solid", fillcolor="#FAFAF8"))
+    doc.automaticstyles.addElement(page_style)
+    frame_style = style.Style(name="PhotoSlideTextFrame", family="graphic")
+    frame_style.addElement(style.GraphicProperties(fill="none", stroke="none"))
+    doc.automaticstyles.addElement(frame_style)
+    image_style = style.Style(name="PhotoSlideImage", family="graphic")
+    image_style.addElement(style.GraphicProperties(fill="none", stroke="none"))
+    doc.automaticstyles.addElement(image_style)
+    line_style = style.Style(name="PhotoSlideRule", family="graphic")
+    line_style.addElement(style.GraphicProperties(
+        stroke="solid", strokecolor="#8C8C8C", strokewidth="0.75pt",
+    ))
+    doc.automaticstyles.addElement(line_style)
+    title_style = style.Style(name="PhotoSlideTitle", family="paragraph")
+    title_style.addElement(style.ParagraphProperties(
+        textalign="left", margintop="0in", marginbottom="0in",
+    ))
+    title_style.addElement(style.TextProperties(
+        fontname=bold_face_name, fontnameasian=bold_face_name,
+        fontfamily=quoted_font_family, fontfamilyasian=quoted_font_family,
+        fontstylename="Bold", fontstylenameasian="Bold",
+        fontsize="20pt", fontsizeasian="20pt",
+        fontweight="bold", fontweightasian="bold",
+        language="ja" if args.profile == "japanese" else "en",
+        country="JP" if args.profile == "japanese" else "US",
+        languageasian="ja" if args.profile == "japanese" else "en",
+        countryasian="JP" if args.profile == "japanese" else "US",
+        color="#171717",
+    ))
+    doc.automaticstyles.addElement(title_style)
+    number_style = style.Style(name="PhotoSlideNumber", family="paragraph")
+    number_style.addElement(style.ParagraphProperties(
+        textalign="right", margintop="0in", marginbottom="0in",
+    ))
+    number_style.addElement(style.TextProperties(
+        fontname=font_name, fontnameasian=font_name,
+        fontfamily=quoted_font_family, fontfamilyasian=quoted_font_family,
+        fontstylename="Regular", fontstylenameasian="Regular",
+        fontsize="10pt", fontsizeasian="10pt",
+        fontweight="normal", fontweightasian="normal",
+        language="ja" if args.profile == "japanese" else "en",
+        country="JP" if args.profile == "japanese" else "US",
+        languageasian="ja" if args.profile == "japanese" else "en",
+        countryasian="JP" if args.profile == "japanese" else "US",
+        color="#737373",
+    ))
+    doc.automaticstyles.addElement(number_style)
+
+    with tempfile.TemporaryDirectory(prefix="hasunomi-photo-slide-") as tmp:
+        work = Path(tmp)
+        for index, slide_spec in enumerate(slides, start=1):
+            title_value = str(slide_spec.get("title") or spec.get("title") or "Photo Slide")
+            raw_images = slide_spec.get("images", [])
+            if not isinstance(raw_images, list) or len(raw_images) not in (1, 2):
+                raise OfficeError(f"Slide {index} must contain one or two photos.")
+            photos = []
+            for raw in raw_images:
+                source = resolved_photo_path(spec_path, str(raw))
+                payload, width, height = normalized_photo(
+                    source, work, Image, ImageOps, UnidentifiedImageError,
+                )
+                photos.append((source, payload, width, height, photo_orientation(width, height)))
+            orientations = [photo[4] for photo in photos]
+            inferred = inferred_slide_layout(orientations)
+            layout = str(slide_spec.get("layout") or inferred)
+            if layout != inferred:
+                raise OfficeError(
+                    f"Slide {index} layout {layout} does not match photo orientations; expected {inferred}."
+                )
+            cells = layout_cells(layout)
+            page = draw.Page(
+                name=f"slide-{index}",
+                masterpagename=master,
+                stylename=page_style,
+            )
+            add_slide_text(
+                page, draw, text, frame_style, title_style, title_value,
+                name=f"title-{index}", x=SLIDE_LEFT, y=0.22,
+                width=10.9, height=0.38,
+            )
+            add_slide_text(
+                page, draw, text, frame_style, number_style, f"{index:02d}",
+                name=f"number-{index}", x=12.18, y=0.27,
+                width=0.70, height=0.28,
+            )
+            page.addElement(draw.Line(
+                name=f"rule-{index}", stylename=line_style,
+                x1=inch(SLIDE_LEFT), y1="0.71in",
+                x2=inch(SLIDE_WIDTH - SLIDE_RIGHT), y2="0.71in",
+            ))
+            for photo_index, (source, payload, width, height, _) in enumerate(photos):
+                x, y, rendered_width, rendered_height = contained_box(cells[photo_index], width, height)
+                frame = draw.Frame(
+                    name=f"photo-{index}-{photo_index + 1}",
+                    stylename=image_style,
+                    x=inch(x), y=inch(y),
+                    width=inch(rendered_width), height=inch(rendered_height),
+                )
+                href = doc.addPictureFromString(payload, "image/jpeg")
+                frame.addElement(draw.Image(href=href, type="simple", show="embed", actuate="onLoad"))
+                page.addElement(frame)
+            doc.presentation.addElement(page)
+    doc.save(str(output))
+    print(output)
+    return 0
+
+
+def office_content(path: Path) -> str:
+    with zipfile.ZipFile(path) as archive:
+        return archive.read("content.xml").decode("utf-8", errors="replace")
+
+
+def pdf_inspection(path: Path) -> tuple[int | None, list[int], list[str]]:
+    failures: list[str] = []
+    pdfinfo = executable("pdfinfo")
+    pdftotext = executable("pdftotext")
+    if not pdfinfo:
+        return None, [], ["pdfinfo unavailable"]
+    result = subprocess.run([pdfinfo, str(path)], capture_output=True, text=True)
+    if result.returncode:
+        return None, [], ["pdfinfo could not read the PDF"]
+    match = re.search(r"^Pages:\s+(\d+)", result.stdout, re.MULTILINE)
+    pages = int(match.group(1)) if match else None
+    if pages is None:
+        failures.append("page count unavailable")
+    blank_pages: list[int] = []
+    if pages and pdftotext:
+        with tempfile.TemporaryDirectory(prefix="office-verify-") as tmp:
+            for page in range(1, pages + 1):
+                target = Path(tmp) / f"page-{page}.txt"
+                extracted = subprocess.run(
+                    [pdftotext, "-f", str(page), "-l", str(page), str(path), str(target)],
+                    capture_output=True,
+                    text=True,
+                )
+                if extracted.returncode == 0 and not target.read_text(encoding="utf-8", errors="replace").strip():
+                    blank_pages.append(page)
+    return pages, blank_pages, failures
+
+
+def pdf_fonts(path: Path) -> list[dict[str, str]]:
+    inspector = executable("pdffonts")
+    if not inspector:
+        raise OfficeError("pdffonts is required for embedded-font verification.")
+    result = subprocess.run([inspector, str(path)], capture_output=True, text=True)
+    if result.returncode:
+        raise OfficeError((result.stderr or result.stdout or "pdffonts failed").strip())
+    fonts: list[dict[str, str]] = []
+    for line in result.stdout.splitlines()[2:]:
+        fields = line.split()
+        if len(fields) < 8:
+            continue
+        fonts.append({
+            "name": fields[0],
+            "type": " ".join(fields[1:-6]),
+            "embedded": fields[-5],
+            "subset": fields[-4],
+        })
+    return fonts
+
+
+def normalized_font_name(value: str) -> str:
+    value = re.sub(r"^[A-Z]{6}\+", "", value)
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
+def expected_font_failures(
+    fonts: list[dict[str, str]], family: str, require_bold: bool,
+) -> list[str]:
+    expected = normalized_font_name(family)
+    matching = [font for font in fonts if expected in normalized_font_name(font["name"])]
+    failures: list[str] = []
+    if not matching:
+        return [f"rendered PDF does not use {family}"]
+    if any(font["embedded"].casefold() != "yes" for font in matching):
+        failures.append(f"rendered PDF does not embed every used {family} font")
+    if require_bold and not any("bold" in normalized_font_name(font["name"]) for font in matching):
+        failures.append(f"rendered PDF does not use the Bold face of {family}")
+    return failures
+
+
+def render_office_pdf(path: Path, destination: Path) -> Path:
+    office = executable("soffice", "libreoffice")
+    if not office:
+        raise OfficeError("LibreOffice is required to render this document for verification.")
+    result = subprocess.run(
+        [office, "--headless", "--convert-to", "pdf", "--outdir", str(destination), str(path)],
+        capture_output=True,
+        text=True,
+    )
+    rendered = destination / f"{path.stem}.pdf"
+    if result.returncode or not rendered.is_file():
+        raise OfficeError((result.stderr or result.stdout or "LibreOffice conversion failed").strip())
+    return rendered
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    path = Path(args.file).expanduser().resolve()
+    failures: list[str] = []
+    pages = None
+    blank_pages: list[int] = []
+    if not path.is_file():
+        failures.append("file does not exist")
+    elif path.suffix.lower() == ".odt":
+        try:
+            with zipfile.ZipFile(path) as archive:
+                names = set(archive.namelist())
+            if "content.xml" not in names or "styles.xml" not in names:
+                failures.append("invalid ODT package")
+            if "office:text" not in office_content(path):
+                failures.append("ODT has no text body")
+            with tempfile.TemporaryDirectory(prefix="office-render-") as tmp:
+                rendered = render_office_pdf(path, Path(tmp))
+                pages, blank_pages, render_failures = pdf_inspection(rendered)
+                failures.extend(render_failures)
+                if args.expect_font:
+                    failures.extend(expected_font_failures(
+                        pdf_fonts(rendered), args.expect_font, args.require_bold,
+                    ))
+        except zipfile.BadZipFile:
+            failures.append("invalid ZIP container")
+        except OfficeError as error:
+            failures.append(str(error))
+    elif path.suffix.lower() == ".odp":
+        try:
+            with zipfile.ZipFile(path) as archive:
+                names = set(archive.namelist())
+            if "content.xml" not in names or "styles.xml" not in names:
+                failures.append("invalid ODP package")
+            content = office_content(path)
+            slide_count = len(re.findall(r"<draw:page\b", content))
+            image_count = len(re.findall(r"<draw:image\b", content))
+            if slide_count == 0:
+                failures.append("ODP has no slides")
+            if image_count == 0:
+                failures.append("ODP has no photos")
+            with tempfile.TemporaryDirectory(prefix="office-render-") as tmp:
+                rendered = render_office_pdf(path, Path(tmp))
+                pages, blank_pages, render_failures = pdf_inspection(rendered)
+                failures.extend(render_failures)
+                if pages is not None and pages != slide_count:
+                    failures.append(f"rendered page count {pages} does not match slide count {slide_count}")
+                if args.expect_font:
+                    failures.extend(expected_font_failures(
+                        pdf_fonts(rendered), args.expect_font, args.require_bold,
+                    ))
+        except zipfile.BadZipFile:
+            failures.append("invalid ZIP container")
+        except OfficeError as error:
+            failures.append(str(error))
+    elif path.suffix.lower() == ".pdf":
+        pages, blank_pages, pdf_failures = pdf_inspection(path)
+        failures.extend(pdf_failures)
+        if args.expect_font:
+            failures.extend(expected_font_failures(
+                pdf_fonts(path), args.expect_font, args.require_bold,
+            ))
+    else:
+        failures.append("verification supports ODT, ODP, and PDF")
+    if blank_pages and not args.allow_blank_pages:
+        failures.append("blank pages: " + ", ".join(map(str, blank_pages)))
+    print(json.dumps({
+        "file": str(path), "ok": not failures, "failures": failures,
+        "pages": pages, "blank_pages": blank_pages,
+    }, ensure_ascii=False, indent=2))
+    return 1 if failures else 0
+
+
+def cmd_font_check(args: argparse.Namespace) -> int:
+    _, _, _, _, Image, _, _ = require_presentation_dependencies()
+    with tempfile.TemporaryDirectory(prefix="office-font-check-") as tmp:
+        work = Path(tmp)
+        image = work / "sample.jpg"
+        Image.new("RGB", (640, 360), "#D9D9D9").save(image, format="JPEG")
+        spec = work / "spec.json"
+        spec.write_text(json.dumps({
+            "title": "日本語フォント確認",
+            "slides": [{"title": "日本語フォント確認", "images": [str(image)]}],
+        }, ensure_ascii=False), encoding="utf-8")
+        deck = work / "font-check.odp"
+        with contextlib.redirect_stdout(io.StringIO()):
+            cmd_create_odp(argparse.Namespace(
+                input=str(spec), output=str(deck), profile=args.profile,
+            ))
+        rendered = render_office_pdf(deck, work)
+        fonts = pdf_fonts(rendered)
+        failures = expected_font_failures(fonts, "Noto Sans CJK JP", True)
+        print(json.dumps({
+            "profile": args.profile,
+            "ok": not failures,
+            "failures": failures,
+            "fonts": fonts,
+        }, ensure_ascii=False, indent=2))
+        return 1 if failures else 0
+
+
+def cmd_convert(args: argparse.Namespace) -> int:
+    source = Path(args.input).expanduser().resolve()
+    output = Path(args.output).expanduser().resolve()
+    if not source.is_file():
+        raise OfficeError(f"Input does not exist: {source}")
+    office = executable("soffice", "libreoffice")
+    if not office:
+        raise OfficeError("LibreOffice is unavailable.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="office-convert-") as tmp:
+        result = subprocess.run(
+            [office, "--headless", "--convert-to", args.format, "--outdir", tmp, str(source)],
+            capture_output=True,
+            text=True,
+        )
+        generated = Path(tmp) / f"{source.stem}.{args.format}"
+        if result.returncode or not generated.is_file():
+            raise OfficeError((result.stderr or result.stdout or "LibreOffice conversion failed").strip())
+        shutil.copy2(generated, output)
+    print(output)
+    return 0
+
+
+def cmd_ocr(args: argparse.Namespace) -> int:
+    tesseract = executable("tesseract")
+    if not tesseract:
+        raise OfficeError("Tesseract OCR is unavailable. Install it or configure another OCR backend.")
+    source = Path(args.input).expanduser().resolve()
+    output = Path(args.output).expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="hasunomi-ocr-") as tmp:
+        work = Path(tmp)
+        if source.suffix.lower() == ".pdf":
+            pdftoppm = executable("pdftoppm")
+            if not pdftoppm:
+                raise OfficeError("pdftoppm is required for PDF OCR.")
+            rendered = work / "page"
+            result = subprocess.run([pdftoppm, "-png", "-r", "300", str(source), str(rendered)], capture_output=True, text=True)
+            if result.returncode:
+                raise OfficeError((result.stderr or result.stdout).strip())
+            pages = sorted(work.glob("page-*.png"))
+        else:
+            pages = [source]
+        if not pages:
+            raise OfficeError("No OCR pages were produced.")
+        texts: list[str] = []
+        preprocessing = "not-available"
+        image_tool = executable("magick", "convert")
+        for index, page in enumerate(pages, start=1):
+            prepared = page
+            if image_tool:
+                candidate = work / f"prepared-{index}.png"
+                command = [image_tool]
+                if Path(image_tool).name == "magick":
+                    command.append(str(page))
+                else:
+                    command.append(str(page))
+                command.extend(["-colorspace", "Gray", "-auto-level", "-deskew", "40%", "-sharpen", "0x1", str(candidate)])
+                converted = subprocess.run(command, capture_output=True, text=True)
+                if converted.returncode == 0 and candidate.is_file():
+                    prepared = candidate
+                    preprocessing = "grayscale-auto-level-deskew-sharpen"
+                else:
+                    preprocessing = "failed-used-original"
+            base = work / f"ocr-{index}"
+            result = subprocess.run([tesseract, str(prepared), str(base), "-l", args.lang], capture_output=True, text=True)
+            if result.returncode:
+                raise OfficeError((result.stderr or result.stdout).strip())
+            texts.append(base.with_suffix(".txt").read_text(encoding="utf-8", errors="replace").strip())
+        extracted = "\n\n".join(texts)
+    output.write_text(
+        f"---\nsource: {source.name}\nlanguage: {args.language_name}\n---\n\n# Extracted Text\n\n{extracted}\n",
+        encoding="utf-8",
+    )
+    print(f"engine=tesseract preprocessing={preprocessing} pages={len(pages)}", file=sys.stderr)
+    print(output)
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(prog="office-tool")
+    sub = result.add_subparsers(dest="command", required=True)
+    sub.add_parser("status").set_defaults(func=cmd_status)
+    create = sub.add_parser("create-odt")
+    create.add_argument("input")
+    create.add_argument("output")
+    create.add_argument("--profile", choices=("default", "japanese"), default="default")
+    create.set_defaults(func=cmd_create_odt)
+    create_slides = sub.add_parser("create-odp")
+    create_slides.add_argument("input")
+    create_slides.add_argument("output")
+    create_slides.add_argument("--profile", choices=("default", "japanese"), default="default")
+    create_slides.set_defaults(func=cmd_create_odp)
+    verify = sub.add_parser("verify")
+    verify.add_argument("file")
+    verify.add_argument("--allow-blank-pages", action="store_true")
+    verify.add_argument("--expect-font")
+    verify.add_argument("--require-bold", action="store_true")
+    verify.set_defaults(func=cmd_verify)
+    font_check = sub.add_parser("font-check")
+    font_check.add_argument("--profile", choices=("japanese",), default="japanese")
+    font_check.set_defaults(func=cmd_font_check)
+    convert = sub.add_parser("convert")
+    convert.add_argument("input")
+    convert.add_argument("output")
+    convert.add_argument("--format", choices=("pdf", "odt", "docx"), required=True)
+    convert.set_defaults(func=cmd_convert)
+    ocr = sub.add_parser("ocr")
+    ocr.add_argument("input")
+    ocr.add_argument("output")
+    ocr.add_argument("--lang", default="eng")
+    ocr.add_argument("--language-name", default="English")
+    ocr.set_defaults(func=cmd_ocr)
+    return result
+
+
+if __name__ == "__main__":
+    arguments = parser().parse_args()
+    try:
+        raise SystemExit(arguments.func(arguments))
+    except OfficeError as error:
+        print(f"office-tool: {error}", file=sys.stderr)
+        raise SystemExit(2)

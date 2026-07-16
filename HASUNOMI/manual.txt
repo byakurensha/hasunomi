@@ -1,0 +1,83 @@
+HASUNOMI / Claude Code VS Code Easy Startup Pack
+
+START
+
+1. Open the General folder in VS Code.
+2. Open the official Claude Code panel.
+3. Type: setup
+4. Answer the language and three work-preference questions. Setup announces
+   environment changes before it checks or installs anything.
+
+SESSIONS AND WORK
+
+Use the official Claude Code session list. Start a new session for new work and
+resume the existing session to continue it. Keep the General folder open; you
+do not select or switch internal project folders.
+
+Ordinary questions need no project. When work uses source files, creates a
+deliverable, changes durable files, or must continue later, Claude quietly
+creates an internal dated project. It contains:
+
+- MASTER.md: purpose, decisions, current state, and next action
+- Materials: preserved copies of accepted source files
+- Output: canonical deliverables
+- Archives: replaced versions retained instead of deleted
+
+Human-ready deliverables are copied to Desktop/OUTBOX for easy pickup. General
+does not create a separate Inbox or Outbox.
+
+SHAREBOX
+
+Desktop/SHAREBOX is one temporary handoff queue for another environment or
+another General session. Claude can copy a selected project Output file there,
+or import one selected item into the current project's Materials. Intake is
+verified before the queue source is removed. Same-name items are never
+overwritten. Direction and purpose can be written in an accompanying Markdown
+handoff; they are not represented by folders. SHAREBOX is not an archive.
+
+DOCUMENTS AND OCR
+
+The supplied A4 and meeting-minutes workflows share one tested A4 template and
+create one editable ODT by default. PDF is created only when requested. When
+the supplied template is not appropriate, choose a free design; free designs
+are not forced to use Noto Sans, ODT, LibreOffice, or one production method.
+
+The supplied Photo Slide template creates an editable 16:9 ODP from phone
+photos. It uses a title, thin horizontal rule, page number, and six layouts for
+one or two landscape/portrait photos. Photos are kept uncropped by default and
+their embedded copies are orientation-normalized. PDF is created only when
+requested.
+
+OCR creates Markdown text without changing the source file. Japanese setup
+prepares Tesseract jpn+eng and Noto Sans CJK JP for the supplied document
+template. English prepares English OCR without requiring that font. The OCR
+backend can be replaced later, and the actual backend and fallback are reported.
+
+MEMORY AND IMPROVEMENT
+
+MEMORY stores portable preferences and useful lessons for later search.
+Current work stays in its project MASTER.md. Ask for the improvement process
+whenever you want a formal seven-stage review. General may also recommend one
+when repeated evidence suggests it will be useful, but a fixed work count does
+not force it. A valid review may decide to change nothing.
+
+EXTERNAL PLUGINS
+
+Claude Code's built-in /plugin screen can add optional external plugins to the
+General workspace. No third-party marketplace or plugin is installed by
+default. Add only sources you trust. Plugin installation, updates, disabling,
+and removal are handled by Claude Code and do not modify HASUNOMI product
+files. Run /reload-plugins after a change when Claude Code requests it.
+
+UPDATES, GIT, AND BACKUP
+
+Ask Claude to apply an update ZIP. The updater replaces product files while
+preserving uppercase user state and local settings. Git records only the main
+Markdown operating files, reusable Memory, and each project MASTER.md. Project
+Materials, Output, Archives, and other files require normal backup or cloud
+sync even when they are text.
+
+RECOVERY
+
+Ask naturally for diagnosis or recovery to use Lifesaver. It diagnoses first,
+preserves work, and does not create another task, notification, or memory system.

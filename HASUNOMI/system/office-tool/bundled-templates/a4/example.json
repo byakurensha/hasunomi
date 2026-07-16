@@ -1,0 +1,9 @@
+{
+  "title": "Example Document",
+  "blocks": [
+    {"type": "paragraph", "text": "This content is separate from the template design."},
+    {"type": "heading", "level": 1, "text": "Details"},
+    {"type": "heading", "level": 2, "text": "Status summary"},
+    {"type": "table", "rows": [["Item", "Value"], ["Status", "Ready"]]}
+  ]
+}

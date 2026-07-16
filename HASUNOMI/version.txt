@@ -1,0 +1,65 @@
+HASUNOMI 1.2.1
+
+- Limited workspace Git history to the main Markdown operating files,
+  reusable Memory, and each project MASTER.md.
+- Materials, Output, Archives, general text files, and binary files now remain
+  backup-owned and cannot enter routine project checkpoints.
+- Setup removes previously tracked excluded files from the Git index without
+  deleting the working files.
+
+- Reduced routine management overhead without removing project, Memory,
+  Improvement, Git, document, OCR, delivery, or recovery capabilities.
+- Formal Improvement now runs by explicit request or evidence-backed value
+  judgment instead of a fixed completed-work count.
+- Project checkpoints commit only the active project and review evidence, so
+  unrelated projects and user edits are not swept into the same Git commit.
+- Clarified that cloud delivery is optional and environment-owned; the public
+  pack contains no bundled cloud transport or connector instruction.
+- Setup now names exact validation commands so Claude does not inspect bundled
+  tool source merely to discover routine command syntax.
+- SHAREBOX is now one flat verified queue for cross-environment and
+  cross-session handoff. It supports explicit send and receive, consumes a
+  source only after verified intake, and uses handoff Markdown instead of
+  direction folders when routing context is needed.
+
+- Project folder names now preserve the user's active language instead of
+  requiring lowercase ASCII English slugs.
+- Japanese project names remain Japanese and are normalized only for unsafe
+  separators; they are not translated for filesystem convenience.
+
+- Fixed the supplied A4 ODT renderer for Japanese documents.
+- Japanese title, heading, and table-header text now carries explicit Asian
+  font family, size, and weight attributes.
+- Added three heading levels, compact table paragraph styles, complete header
+  borders and padding, and content-aware table column widths.
+- Added a recipient-style ODT structure test for these guarantees.
+
+- First stable public release.
+- Uses the official Claude Code VS Code extension and session history as the
+  user-facing workspace.
+- Includes durable project records, Desktop OUTBOX and verified SHAREBOX,
+  Memory, formal Improvement, Git text checkpoints, recovery, updates, OCR,
+  editable A4 ODT, and editable Photo Slide ODP workflows.
+- Keeps cloud delivery, private runtimes, provider credentials, and
+  organization-specific integrations outside the public core.
+
+- Removed the bundled cloud-delivery integration from the public pack. Cloud
+  delivery now belongs to the user's provider or existing environment;
+  Desktop OUTBOX and verified SHAREBOX remain available.
+
+- Added the supplied Photo Slide template: editable 16:9 ODP, title, rule,
+  page number, uncropped phone photos, and six one- or two-photo layouts.
+- Added LibreOffice render verification for actual Noto Sans CJK JP Regular
+  and Bold embedding; OS font registration alone no longer passes setup.
+
+- Rebuilt around the official Claude Code VS Code session history.
+- Users stay in the General workspace; internal projects are created quietly.
+- Removed COMMON, manual project switching, duplicate skills, and hidden
+  HASUNOMI setup state.
+- Projects now contain only MASTER.md, Materials, Output, and Archives.
+- Human delivery now uses Desktop OUTBOX. General-local Inbox and Outbox are
+  retired.
+- Added a generic Desktop SHAREBOX handoff, later expanded to verified explicit
+  intake without directional folders.
+- Preserved session-to-project recovery and automatic Git text checkpoints,
+  plus document, OCR, memory, update, Lifesaver, and formal improvement flows.

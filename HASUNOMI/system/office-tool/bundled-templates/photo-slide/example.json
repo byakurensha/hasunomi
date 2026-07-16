@@ -1,0 +1,29 @@
+{
+  "title": "Photo Update",
+  "slides": [
+    {
+      "title": "Landscape + Landscape",
+      "images": ["Materials/photo-01.jpg", "Materials/photo-02.jpg"]
+    },
+    {
+      "title": "Portrait + Landscape",
+      "images": ["Materials/photo-03.jpg", "Materials/photo-04.jpg"]
+    },
+    {
+      "title": "Landscape + Portrait",
+      "images": ["Materials/photo-05.jpg", "Materials/photo-06.jpg"]
+    },
+    {
+      "title": "One Landscape",
+      "images": ["Materials/photo-07.jpg"]
+    },
+    {
+      "title": "Portrait + Portrait",
+      "images": ["Materials/photo-08.jpg", "Materials/photo-09.jpg"]
+    },
+    {
+      "title": "One Portrait",
+      "images": ["Materials/photo-10.jpg"]
+    }
+  ]
+}
