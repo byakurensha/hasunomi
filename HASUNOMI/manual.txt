@@ -53,13 +53,19 @@ prepares Tesseract jpn+eng and Noto Sans CJK JP for the supplied document
 template. English prepares English OCR without requiring that font. The OCR
 backend can be replaced later, and the actual backend and fallback are reported.
 
-MEMORY AND IMPROVEMENT
+MEMORY, IMPROVEMENT, AND REPAIR
 
 MEMORY stores portable preferences and useful lessons for later search.
 Current work stays in its project MASTER.md. Ask for the improvement process
 whenever you want a formal seven-stage review. General may also recommend one
 when repeated evidence suggests it will be useful, but a fixed work count does
 not force it. A valid review may decide to change nothing.
+
+Improvement ends with a lightweight structural check. Ask for the Repair
+Process when guidance has become duplicated, contradictory, obsolete, or too
+large. Repair reconciles ROLE, rules, Skills, manuals, and implementation,
+compares always-loaded cost before and after, and preserves working features.
+It runs only when needed, not after every task.
 
 EXTERNAL PLUGINS
 
@@ -71,8 +77,9 @@ files. Run /reload-plugins after a change when Claude Code requests it.
 
 UPDATES, GIT, AND BACKUP
 
-Ask Claude to apply an update ZIP. The updater replaces product files while
-preserving uppercase user state and local settings. Git automatically records
+Tell Claude: `Use this ZIP to update the GENERAL workspace currently open in
+VS Code.` The updater replaces product files while preserving uppercase user
+state and local settings. Git automatically records
 only the main Markdown operating files, reusable Memory, and each project
 MASTER.md at work completion or the next session start. You do not need to use
 VS Code Source Control. Project Materials, Output, Archives, and other files

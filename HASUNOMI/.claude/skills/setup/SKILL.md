@@ -31,6 +31,7 @@ Run in this order.
 
    ```text
    python3 system/management-tool/management-tool doctor
+   python3 system/management-tool/management-tool repair-check
    python3 system/office-tool/office-tool status
    ```
 
@@ -62,7 +63,9 @@ Run in this order.
 - `MEMORY/` stores reusable preferences and lessons. Project state does not go
   there. The formal improvement process runs when explicitly requested or when
   accumulated evidence makes a full review worthwhile; it is not forced by a
-  fixed work count.
+  fixed work count. Improvement ends with a lightweight structural check. The
+  separate Repair Process runs only when that check or the user identifies
+  duplication, contradiction, retired routes, or growing always-loaded files.
 - Git records only the main Markdown operating files, reusable Memory, and
   project `MASTER.md`. Materials, Output, Archives, and all other files need
   the user's normal cloud sync or backup even when they are text.
@@ -74,4 +77,5 @@ Run in this order.
 
 Finish with the selected-language equivalent of: `Setup is complete. You can
 start working now.` Do not report completion while `SETTINGS.md` contains `Not
-set`, Git is uninitialized, or either bundled tool fails its required check.
+set`, Git is uninitialized, the structural check fails, or either bundled tool
+fails its required check.

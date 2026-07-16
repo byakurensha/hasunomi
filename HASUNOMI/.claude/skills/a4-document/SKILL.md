@@ -21,7 +21,8 @@ template, or create a free design?
   cell padding, and content-aware table column widths. A4 does not mean one
   page.
 - Produce one editable ODT by default. Create PDF only when explicitly asked.
-- Verify before saving to project `Output/` and delivering to root `OUTBOX/`.
+- Verify before saving to project `Output/`. When human pickup is requested,
+  deliver through Desktop `OUTBOX/`.
 
 ## Free design
 

@@ -79,6 +79,13 @@ Complete one row per candidate.
 - User judgment required:
 - Resume condition or wording:
 
+### Repair Gate
+
+- Structural check result: pass / warning / failure
+- Repair required: yes / no
+- Trigger: ROLE or core change / multiple Skills / duplicate ownership / contradiction / retired route / always-loaded growth / none
+- Repair disposition or reason for no Repair:
+
 ## Completion Gate
 
 - [ ] Actual evidence was reviewed against success criteria.
@@ -88,4 +95,5 @@ Complete one row per candidate.
 - [ ] Applied changes passed conflict checks and verification.
 - [ ] Deferred and rejected changes have reasons.
 - [ ] Project current state and next action are recorded.
+- [ ] The Repair gate has an evidence-backed disposition.
 - [ ] Setup guidance and manuals were updated if first-time behavior changed.

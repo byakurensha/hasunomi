@@ -15,7 +15,7 @@ without replacing Claude Code itself.
 
 Current source versions:
 
-- HASUNOMI: `1.2.2`
+- HASUNOMI: `1.3.0`
 - GLM + DeepSeek Gateway Add-on: `2.0.0`
 
 Release ZIP files are attached to GitHub Releases. The repository source does
@@ -29,12 +29,24 @@ runtime configuration.
 3. Tell Claude Code where the downloaded ZIP is and use this request:
 
 ```text
-Use this ZIP to update the GENERAL workspace currently open in VS Code. Preserve my existing projects, Memory, and settings, then verify version.txt and doctor after the update.
+Use this ZIP to update the GENERAL workspace currently open in VS Code.
 ```
 
-Claude Code updates only product files. `PROJECTS`, `MEMORY`, local settings,
-source material, and deliverables are preserved. Run the update while your
-normal backup or cloud sync is active for additional protection.
+Claude Code updates only product files and checks `version.txt`, doctor, and
+the structural check. `PROJECTS`, `MEMORY`, local settings, source material,
+and deliverables are preserved. Run the update while your normal backup or
+cloud sync is active for additional protection.
+
+## Improve and repair
+
+When something feels wrong, describe the problem and desired result, then ask
+Claude Code to run the Improvement Process. It reviews evidence before changing
+the working method.
+
+If repeated improvements create duplicated guidance, contradictions, retired
+routes, or growing always-loaded files, ask for the Repair Process. Repair
+reconciles ownership across the role, rules, Skills, manuals, and
+implementation. It is not another automatic task and runs only when needed.
 
 ## Repository layout
 

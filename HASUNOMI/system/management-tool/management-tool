@@ -18,6 +18,31 @@ from datetime import datetime
 from pathlib import Path
 
 
+REPAIR_REVIEW_LIMITS = {
+    "always_loaded_bytes": 16 * 1024,
+    "claude_lines": 60,
+    "role_lines": 60,
+    "rules_lines": 180,
+    "skill_lines": 160,
+}
+
+EXPECTED_SKILLS = (
+    "setup",
+    "doctor",
+    "project-work",
+    "improvement",
+    "repair",
+    "share-delivery",
+    "environment",
+    "a4-document",
+    "meeting-minutes",
+    "photo-slide",
+    "ocr",
+    "memory",
+    "lifesaver",
+)
+
+
 def find_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
@@ -597,11 +622,31 @@ def cmd_improvement_done(args: argparse.Namespace) -> int:
         if relative.is_absolute() or ".." in relative.parts:
             raise SystemExit("Improvement changed paths must stay inside General.")
         changed.append(str(relative))
-    print(git_checkpoint(
+    checkpoint = git_checkpoint(
         root,
         "Complete improvement checkpoint",
         ["MEMORY/IMPROVEMENT.md", *changed],
-    ))
+    )
+    report = repair_report(root)
+    structural = [
+        path for path in changed
+        if path in {"CLAUDE.md", "ROLE.md"}
+        or path.startswith(".claude/rules/")
+        or path.startswith(".claude/skills/")
+    ]
+    reasons = []
+    if structural:
+        reasons.append("Improvement changed system-wide role, rule, or Skill ownership.")
+    if report["failures"]:
+        reasons.append("The structural check found a hard consistency failure.")
+    if report["warnings"]:
+        reasons.append("The structural check found growth or maintenance warnings.")
+    print(checkpoint)
+    print(json.dumps({
+        "repair_recommended": bool(reasons),
+        "reasons": reasons,
+        "repair_check": report,
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -620,16 +665,14 @@ def cmd_memory_search(args: argparse.Namespace) -> int:
     return 0 if matches else 1
 
 
-def cmd_doctor(args: argparse.Namespace) -> int:
-    root = find_root()
+def doctor_report(root: Path) -> dict[str, object]:
     failures = []
     required = [
         "CLAUDE.md", "ROLE.md", "SETTINGS.md", "PROJECTS",
         "MEMORY/MEMORY.md", "MEMORY/IMPROVEMENT.md", "TEMPLATES",
         ".claude/settings.json", ".claude/rules/core.md",
-        ".claude/skills/setup/SKILL.md", ".claude/skills/project-work/SKILL.md",
-        ".claude/skills/share-delivery/SKILL.md",
         "system/management-tool/management-tool", "system/office-tool/office-tool",
+        *(f".claude/skills/{name}/SKILL.md" for name in EXPECTED_SKILLS),
     ]
     for item in required:
         if not (root / item).exists():
@@ -677,14 +720,146 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             failures.append("SessionStart hook is not configured")
     except (OSError, json.JSONDecodeError):
         failures.append(".claude/settings.json is invalid")
-    print(json.dumps({
+    return {
         "root": str(root),
         "ok": not failures,
         "failures": failures,
         "projects": len(list(project_paths(root))),
         "unreviewed_improvement_evidence": unchecked_improvements(root / "MEMORY" / "IMPROVEMENT.md"),
-    }, ensure_ascii=False, indent=2))
-    return 1 if failures else 0
+    }
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    report = doctor_report(find_root())
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["ok"] else 1
+
+
+def file_lines(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+
+
+def normalized_paragraphs(path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return [
+        " ".join(block.split())
+        for block in re.split(r"\n\s*\n", text)
+        if len(" ".join(block.split())) >= 120
+    ]
+
+
+def skill_identity(path: Path) -> tuple[str, bool]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    header = text.split("---", 2)[1] if text.startswith("---\n") and text.count("---") >= 2 else ""
+    name = re.search(r"(?m)^name:\s*(.+?)\s*$", header)
+    description = re.search(r"(?m)^description:\s*.+$", header)
+    return (name.group(1).strip() if name else "", bool(description))
+
+
+def repair_report(root: Path) -> dict[str, object]:
+    doctor = doctor_report(root)
+    failures = list(doctor["failures"])
+    warnings = []
+    entry_files = [root / "CLAUDE.md", root / "ROLE.md", root / "SETTINGS.md"]
+    rule_files = sorted((root / ".claude" / "rules").glob("*.md"))
+    loaded_files = [*entry_files, *rule_files]
+    skill_files = sorted((root / ".claude" / "skills").glob("*/SKILL.md"))
+
+    metrics = {
+        "always_loaded_files": [str(path.relative_to(root)) for path in loaded_files if path.is_file()],
+        "always_loaded_bytes": sum(path.stat().st_size for path in loaded_files if path.is_file()),
+        "always_loaded_lines": sum(file_lines(path) for path in loaded_files),
+        "claude_lines": file_lines(root / "CLAUDE.md"),
+        "role_lines": file_lines(root / "ROLE.md"),
+        "rules_lines": sum(file_lines(path) for path in rule_files),
+        "skills": len(skill_files),
+        "skill_lines": sum(file_lines(path) for path in skill_files),
+        "largest_skill_lines": max((file_lines(path) for path in skill_files), default=0),
+    }
+
+    limit_checks = {
+        "always_loaded_bytes": metrics["always_loaded_bytes"],
+        "claude_lines": metrics["claude_lines"],
+        "role_lines": metrics["role_lines"],
+        "rules_lines": metrics["rules_lines"],
+        "skill_lines": metrics["largest_skill_lines"],
+    }
+    for key, value in limit_checks.items():
+        limit = REPAIR_REVIEW_LIMITS[key]
+        if value > limit:
+            warnings.append(f"review threshold exceeded: {key}={value}, threshold={limit}")
+
+    paragraph_owners: dict[str, list[str]] = {}
+    for path in loaded_files:
+        if not path.is_file():
+            continue
+        for paragraph in normalized_paragraphs(path):
+            paragraph_owners.setdefault(paragraph, []).append(str(path.relative_to(root)))
+    duplicated = [owners for owners in paragraph_owners.values() if len(owners) > 1]
+    for owners in duplicated:
+        failures.append(f"duplicated always-loaded guidance: {', '.join(sorted(set(owners)))}")
+
+    skill_names: dict[str, str] = {}
+    for path in skill_files:
+        relative = str(path.relative_to(root))
+        name, has_description = skill_identity(path)
+        if not name or not has_description:
+            failures.append(f"invalid Skill frontmatter: {relative}")
+            continue
+        if name in skill_names:
+            failures.append(f"duplicate Skill name {name}: {skill_names[name]}, {relative}")
+        skill_names[name] = relative
+
+    retired_terms = (
+        "PROJECTS/CURRENT.md",
+        "PROJECTS/COMMON",
+        "TO_GENERAL",
+        "TO_BYAKURENSHA",
+        "root `OUTBOX/`",
+    )
+    governance_files = [root / "ROLE.md", *rule_files, *skill_files]
+    for path in governance_files:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for term in retired_terms:
+            if term in text:
+                failures.append(f"retired route in {path.relative_to(root)}: {term}")
+
+    return {
+        "root": str(root),
+        "ok": not failures,
+        "failures": sorted(set(failures)),
+        "warnings": warnings,
+        "metrics": metrics,
+        "review_limits": REPAIR_REVIEW_LIMITS,
+        "note": "Review limits trigger human judgment; they do not authorize automatic deletion.",
+    }
+
+
+def cmd_repair_check(args: argparse.Namespace) -> int:
+    report = repair_report(find_root())
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["ok"] else 1
+
+
+def cmd_repair_done(args: argparse.Namespace) -> int:
+    root = find_root()
+    report = repair_report(root)
+    if not report["ok"]:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1
+    changed = []
+    for value in args.changed:
+        relative = Path(value)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise SystemExit("Repair changed paths must stay inside General.")
+        changed.append(str(relative))
+    print(git_checkpoint(root, "Complete General repair", changed or []))
+    print(json.dumps({"repair_complete": True, **report}, ensure_ascii=False, indent=2))
+    return 0
 
 
 def safe_member(name: str) -> bool:
@@ -733,7 +908,8 @@ def cmd_update(args: argparse.Namespace) -> int:
         backup_root = root / "UPDATES" / stamp
         replaceable = [
             ".claude/settings.json", ".claude/rules", ".claude/skills",
-            "system", ".gitignore", "manual.txt", "マニュアル.txt", "version.txt",
+            "system", ".gitignore", "manual.txt", "マニュアル.txt", "UPDATE.md",
+            "version.txt",
         ]
         updated_paths = []
         for relative in replaceable:
@@ -799,6 +975,10 @@ def parser() -> argparse.ArgumentParser:
     improvement_done = sub.add_parser("improvement-done")
     improvement_done.add_argument("--changed", action="append", default=[])
     improvement_done.set_defaults(func=cmd_improvement_done)
+    sub.add_parser("repair-check").set_defaults(func=cmd_repair_check)
+    repair_done = sub.add_parser("repair-done")
+    repair_done.add_argument("--changed", action="append", default=[])
+    repair_done.set_defaults(func=cmd_repair_done)
     sub.add_parser("doctor").set_defaults(func=cmd_doctor)
     update = sub.add_parser("update")
     update.add_argument("zip")

@@ -28,10 +28,14 @@ review.
    remove stale entries instead of adding duplicates.
 5. **Method Check**: give every finding one destination: Project, Memory,
    SETTINGS, ROLE, core rule, Skill, Template, Archive, or No change.
-6. **Role Update**: apply only justified high-value changes, remove obsolete
-   guidance, and verify realistic positive and no-change cases.
-7. **Next Action Contract**: record changes, evidence, rejected/deferred items,
-   remaining risk, next owner, and the smallest next action in `MASTER.md`.
+6. **Targeted Update**: apply only justified high-value changes, remove
+   obsolete guidance, and verify realistic positive and no-change cases. Do
+   not solve a cross-file structural problem by adding another copied rule.
+7. **Next Action and Repair Gate**: record changes, evidence,
+   rejected/deferred items, remaining risk, next owner, and the smallest next
+   action in `MASTER.md`. Decide whether Repair is required. It is required
+   when the finding spans `ROLE.md`, core rules, several Skills, or exposes
+   duplication, contradiction, retired routes, or always-loaded growth.
 
 Ask before a major policy change, external-account action, payment, destructive
 work, or a change to the user's established workflow. A valid run may conclude
@@ -48,4 +52,6 @@ python3 system/management-tool/management-tool improvement-done \
 ```
 
 Omit `--changed` when the review changes no reusable rule, setting, template,
-or Memory file.
+or Memory file. This command runs a lightweight structural check and reports
+whether the separate Repair Process is recommended. If recommended, complete
+the repair skill before treating the system-level finding as closed.

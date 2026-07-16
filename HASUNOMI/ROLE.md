@@ -23,5 +23,6 @@ records are maintained quietly when durable work is needed.
 - User templates: `TEMPLATES/`.
 - Replaceable bundled implementation: lowercase `system/`.
 
-The improvement process may update this role only when evidence shows that a
-workspace-wide behavioral change is justified. Do not put project history here.
+Improvement may propose a workspace-wide behavioral change, but the repair
+process owns cross-file consolidation and checks this role for duplication and
+growth before such a change is closed. Do not put project history here.

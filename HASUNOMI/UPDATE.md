@@ -1,29 +1,40 @@
 # Update payload
 
-Version 1.2.2 makes the small major-Markdown Git checkpoint automatic. Project
-completion records the active project immediately. The next Claude Code
-session start quietly records any remaining allowed Markdown edits, renames,
-deletions, and new project MASTER files. Materials, Output, Archives, and
-imported snapshots remain backup-owned even when they contain Markdown. This
-release retains the 1.2.1 Markdown allowlist, 1.2.0 flat verified SHAREBOX, and
-1.1.0 management-overhead reductions.
+Version 1.3.0 adds a separate Repair Process without adding routine startup
+work. Improvement still reviews evidence and makes targeted changes; Repair is
+used only when the user or the Improvement gate finds structural duplication,
+contradiction, retired routes, or growing always-loaded guidance. The new
+`repair-check` reports hard consistency failures separately from review-only
+size warnings.
 
-Use a fresh installation when moving from any development build. A 1.0.x
-installation can be updated by asking Claude Code to update from the 1.2.2 ZIP;
-the bundled management tool replaces product files while preserving uppercase
-user state and `.claude/settings.local.json`.
+This release retains automatic major-Markdown checkpoints, the strict Git
+allowlist, flat verified SHAREBOX, Desktop OUTBOX, session-linked projects,
+Memory, document and OCR workflows, and user-owned Materials and Output.
 
-When upgrading a 1.0.x workspace, extract the 1.2.2 ZIP to a temporary folder
-and run the management tool from that extracted 1.2.2 payload while the current
+To update an existing workspace, give this ZIP to Claude Code while the current
+VS Code root is that existing `GENERAL` folder and say:
+
+```text
+Use this ZIP to update the GENERAL workspace currently open in VS Code.
+```
+
+The bundled updater preserves `PROJECTS`, `MEMORY`, uppercase user state,
+settings, materials, and outputs. After updating, verify:
+
+```text
+cat version.txt
+python3 system/management-tool/management-tool doctor
+python3 system/management-tool/management-tool repair-check
+```
+
+When upgrading a 1.0.x workspace manually, extract the 1.3.0 ZIP to a temporary
+folder and run the new updater from the extracted payload while the current
 working directory is the existing General root:
 
 ```text
-python3 /temporary/1.2.2/system/management-tool/management-tool update \
-  /path/to/HASUNOMI-Claude-Code-VSCode-Easy-Startup-Pack-1.2.2.zip
+python3 /temporary/1.3.0/system/management-tool/management-tool update \
+  /path/to/HASUNOMI-Claude-Code-VSCode-Easy-Startup-Pack-1.3.0.zip
 ```
 
-Do not run the old 1.0.x updater for this transition. The 1.2.2 updater keeps
-Git commits scoped to updated product files and restores script execution
-permissions after ZIP extraction.
-
-Read `version.txt` for release details.
+Do not run the old 1.0.x updater for this transition. Read `version.txt` for
+release details.

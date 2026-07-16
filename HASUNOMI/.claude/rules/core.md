@@ -71,6 +71,13 @@
   accumulated evidence shows that its expected benefit justifies the time and
   maintenance cost. Completed work entries are evidence, not an automatic
   trigger.
+- Improvement owns evidence-backed method changes. Its final gate runs a small
+  structural check. Use the separate repair skill only when that gate or the
+  user identifies cross-file inconsistency, duplicated ownership, retired
+  routes, or growth in always-loaded guidance.
+- Repair consolidates and verifies the system; it is not a fixed periodic task.
+  Prefer replacing or removing stale guidance over adding another rule, and do
+  not remove a working capability merely to reduce file size.
 - Keep credentials and private data out of Git, logs, Memory, and records.
 - Treat Git as an automatic, small major-Markdown checkpoint. Project
   completion records its own project immediately; the next session start
