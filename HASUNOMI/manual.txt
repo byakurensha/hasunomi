@@ -54,6 +54,14 @@ date, recipient, amount, description, receipt statement, issuer name, and
 optional address/contact. Print at 100 percent without fit-to-page. PDF is
 created only when requested.
 
+The supplied Simple Slide template creates an editable 16:9 ODP with eleven
+Japanese layouts for covers, messages, text, agendas, photos, metrics, tables,
+progress, and summaries. The supplied Newsletter template creates an editable
+eight-page A4 portrait ODG for greetings, features, activity reports, photos,
+contributions, project reports, notices, and a closing article. Both use Noto
+Sans CJK JP and Japanese sample text; English text remains supported. PDF is
+created only when requested.
+
 OCR creates Markdown text without changing the source file. Japanese setup
 prepares Tesseract jpn+eng and Noto Sans CJK JP for the supplied document
 template. English prepares English OCR without requiring that font. The OCR

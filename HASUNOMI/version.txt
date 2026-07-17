@@ -1,3 +1,16 @@
+HASUNOMI 1.5.0
+
+- Added an editable Japanese Simple Slide ODP with eleven reusable layouts.
+- Added an editable Japanese A4 Newsletter ODG with eight reusable pages.
+- Standard A4 and Photo Slide example content is now Japanese, matching the
+  Six-Up Receipt, Simple Slide, and Newsletter samples.
+- Bundled template sample text and user-facing guidance are Japanese. Internal
+  slugs, JSON fields, and command names remain English.
+- All bundled Japanese templates use Noto Sans CJK JP. English text remains
+  supported without changing the internal template structure.
+- Added `create-simple-slides` and `create-newsletter` to `office-tool` and
+  generalized ODG verification beyond receipt sheets.
+
 HASUNOMI 1.4.0
 
 - Added a simple Japanese six-up receipt template as editable ODG.

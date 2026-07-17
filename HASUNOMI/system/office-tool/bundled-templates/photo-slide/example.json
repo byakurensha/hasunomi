@@ -1,28 +1,28 @@
 {
-  "title": "Photo Update",
+  "title": "活動写真報告",
   "slides": [
     {
-      "title": "Landscape + Landscape",
+      "title": "横長写真 2枚",
       "images": ["Materials/photo-01.jpg", "Materials/photo-02.jpg"]
     },
     {
-      "title": "Portrait + Landscape",
+      "title": "縦長写真と横長写真",
       "images": ["Materials/photo-03.jpg", "Materials/photo-04.jpg"]
     },
     {
-      "title": "Landscape + Portrait",
+      "title": "横長写真と縦長写真",
       "images": ["Materials/photo-05.jpg", "Materials/photo-06.jpg"]
     },
     {
-      "title": "One Landscape",
+      "title": "横長写真 1枚",
       "images": ["Materials/photo-07.jpg"]
     },
     {
-      "title": "Portrait + Portrait",
+      "title": "縦長写真 2枚",
       "images": ["Materials/photo-08.jpg", "Materials/photo-09.jpg"]
     },
     {
-      "title": "One Portrait",
+      "title": "縦長写真 1枚",
       "images": ["Materials/photo-10.jpg"]
     }
   ]

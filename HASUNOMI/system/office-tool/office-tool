@@ -398,12 +398,13 @@ def cmd_create_receipts(args: argparse.Namespace) -> int:
         doc.automaticstyles.addElement(target)
         return target
 
-    title_style = paragraph_style("ReceiptTitle", "14pt", "bold", "left")
+    title_style = paragraph_style("ReceiptTitle", "12pt", "bold", "left")
     date_style = paragraph_style("ReceiptDate", "7.5pt", "normal", "right")
-    recipient_style = paragraph_style("ReceiptRecipient", "9.5pt", "normal", "left")
+    recipient_style = paragraph_style("ReceiptRecipient", "11pt", "normal", "left")
     amount_style = paragraph_style("ReceiptAmount", "12pt", "bold", "left")
     body_style = paragraph_style("ReceiptBody", "8pt", "normal", "left")
-    issuer_style = paragraph_style("ReceiptIssuer", "7pt", "normal", "right")
+    issuer_name_style = paragraph_style("ReceiptIssuerName", "10pt", "bold", "right")
+    issuer_detail_style = paragraph_style("ReceiptIssuerDetail", "7pt", "normal", "right")
 
     page = draw.Page(name="receipt-sheet", masterpagename=master, stylename=page_style)
     page.addElement(draw.Line(
@@ -417,13 +418,13 @@ def cmd_create_receipts(args: argparse.Namespace) -> int:
             x1="0mm", y1=mm(y), x2=mm(RECEIPT_PAGE_WIDTH_MM), y2=mm(y),
         ))
 
-    issuer_lines = [str(issuer.get("name", "")).strip() or "発行者名"]
-    issuer_lines.extend(
+    issuer_name = str(issuer.get("name", "")).strip() or "発行者名"
+    issuer_details = [
         value for value in (
             str(issuer.get("address", "")).strip(),
             str(issuer.get("contact", "")).strip(),
         ) if value
-    )
+    ]
     for index, item in enumerate(receipts, start=1):
         column = (index - 1) % 2
         row = (index - 1) // 2
@@ -464,7 +465,7 @@ def cmd_create_receipts(args: argparse.Namespace) -> int:
         amount_text = f"金額　￥{amount}" if amount else "金額　￥"
         add_drawing_text(
             page, draw, text, text_frame, amount_style, amount_text,
-            name=f"amount-{index}", x=left + 3, y=origin_y + 25.5, width=width - 6, height=7,
+            name=f"amount-{index}", x=left + 3, y=origin_y + 24.2, width=width - 6, height=8.5,
         )
 
         description = str(item.get("description", "")).strip()
@@ -482,17 +483,50 @@ def cmd_create_receipts(args: argparse.Namespace) -> int:
 
         add_drawing_text(
             page, draw, text, text_frame, body_style, "上記正に領収いたしました。",
-            name=f"statement-{index}", x=left, y=origin_y + 49.0, width=68, height=7,
+            name=f"statement-{index}", x=left, y=origin_y + 45.0, width=68, height=7,
         )
-        add_drawing_lines(
-            page, draw, text, text_frame, issuer_style, issuer_lines,
-            name=f"issuer-{index}", x=origin_x + 76, y=origin_y + 48.0, width=67.5, height=17,
+        add_drawing_text(
+            page, draw, text, text_frame, issuer_name_style, issuer_name,
+            name=f"issuer-name-{index}", x=origin_x + 76, y=origin_y + 49.5,
+            width=67.5, height=6,
         )
+        if issuer_details:
+            add_drawing_lines(
+                page, draw, text, text_frame, issuer_detail_style, issuer_details,
+                name=f"issuer-details-{index}", x=origin_x + 76, y=origin_y + 55.5,
+                width=67.5, height=9.5,
+            )
 
     doc.drawing.addElement(page)
     doc.save(str(output))
     print(output)
     return 0
+
+
+def copy_bundled_template(output_value: str, template_name: str, extension: str) -> int:
+    output = Path(output_value).expanduser().resolve()
+    if output.suffix.lower() != extension:
+        raise OfficeError(f"{template_name} output must use the {extension} extension.")
+    source = (
+        Path(__file__).resolve().parent
+        / "bundled-templates"
+        / template_name
+        / f"template{extension}"
+    )
+    if not source.is_file():
+        raise OfficeError(f"Bundled template is missing: {source}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+    print(output)
+    return 0
+
+
+def cmd_create_simple_slides(args: argparse.Namespace) -> int:
+    return copy_bundled_template(args.output, "simple-slide", ".odp")
+
+
+def cmd_create_newsletter(args: argparse.Namespace) -> int:
+    return copy_bundled_template(args.output, "newsletter", ".odg")
 
 
 def photo_orientation(width: int, height: int) -> str:
@@ -898,8 +932,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
             image_count = len(re.findall(r"<draw:image\b", content))
             if slide_count == 0:
                 failures.append("ODP has no slides")
-            if image_count == 0:
-                failures.append("ODP has no photos")
+            if image_count == 0 and "<draw:rect" not in content:
+                failures.append("ODP has no visual content")
             with tempfile.TemporaryDirectory(prefix="office-render-") as tmp:
                 rendered = render_office_pdf(path, Path(tmp))
                 pages, blank_pages, render_failures = pdf_inspection(rendered)
@@ -923,13 +957,21 @@ def cmd_verify(args: argparse.Namespace) -> int:
             content = office_content(path)
             if "office:drawing" not in content:
                 failures.append("ODG has no drawing body")
-            if len(re.findall(r"draw:name=\"amount-box-", content)) != 6:
-                failures.append("ODG does not contain six receipt amount boxes")
+            drawing_count = len(re.findall(r"<draw:page\b", content))
+            receipt_box_count = len(re.findall(r"draw:name=\"amount-box-", content))
+            if drawing_count == 0:
+                failures.append("ODG has no pages")
+            if receipt_box_count not in (0, 6):
+                failures.append("ODG receipt sheet does not contain six amount boxes")
             with tempfile.TemporaryDirectory(prefix="office-render-") as tmp:
                 rendered = render_office_pdf(path, Path(tmp))
                 pages, blank_pages, render_failures = pdf_inspection(rendered)
                 failures.extend(render_failures)
-                if pages is not None and pages != 1:
+                if pages is not None and pages != drawing_count:
+                    failures.append(
+                        f"rendered page count {pages} does not match drawing page count {drawing_count}"
+                    )
+                if receipt_box_count == 6 and pages is not None and pages != 1:
                     failures.append(f"rendered receipt sheet has {pages} pages instead of 1")
                 if args.expect_font:
                     failures.extend(expected_font_failures(
@@ -1083,6 +1125,12 @@ def parser() -> argparse.ArgumentParser:
     create_receipts.add_argument("output")
     create_receipts.add_argument("--profile", choices=("default", "japanese"), default="japanese")
     create_receipts.set_defaults(func=cmd_create_receipts)
+    create_simple_slides = sub.add_parser("create-simple-slides")
+    create_simple_slides.add_argument("output")
+    create_simple_slides.set_defaults(func=cmd_create_simple_slides)
+    create_newsletter = sub.add_parser("create-newsletter")
+    create_newsletter.add_argument("output")
+    create_newsletter.set_defaults(func=cmd_create_newsletter)
     verify = sub.add_parser("verify")
     verify.add_argument("file")
     verify.add_argument("--allow-blank-pages", action="store_true")
