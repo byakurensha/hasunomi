@@ -1,4 +1,9 @@
-HASUNOMI 1.5.0
+HASUNOMI 1.6.0
+
+- Added an editable Japanese A4 event Flyer ODG with a one-page layout.
+- The flyer includes a photo, title and date, lead, three fact columns,
+  application/contact block, and footer without overlaying text on the photo.
+- Added `create-flyer` to `office-tool` and a dedicated Flyer Skill.
 
 - Added an editable Japanese Simple Slide ODP with eleven reusable layouts.
 - Added an editable Japanese A4 Newsletter ODG with eight reusable pages.

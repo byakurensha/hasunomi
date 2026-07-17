@@ -7,7 +7,8 @@ in Visual Studio Code. It organizes sessions, source material, editable office
 documents, project records, reusable memory, and explicit handoff folders
 without replacing Claude Code itself. It includes Japanese editable templates
 for a standard A4 document, photo slides, an exact A4 six-up receipt sheet, an
-eleven-layout simple presentation, and an eight-page newsletter.
+eleven-layout simple presentation, an eight-page newsletter, and a one-page
+A4 event flyer.
 
 ## Downloads
 
@@ -17,7 +18,7 @@ eleven-layout simple presentation, and an eight-page newsletter.
 
 Current source versions:
 
-- HASUNOMI: `1.5.0`
+- HASUNOMI: `1.6.0`
 - GLM + DeepSeek Gateway Add-on: `2.0.0`
 
 Release ZIP files are attached to GitHub Releases. The repository source does

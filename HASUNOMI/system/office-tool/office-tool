@@ -529,6 +529,10 @@ def cmd_create_newsletter(args: argparse.Namespace) -> int:
     return copy_bundled_template(args.output, "newsletter", ".odg")
 
 
+def cmd_create_flyer(args: argparse.Namespace) -> int:
+    return copy_bundled_template(args.output, "flyer", ".odg")
+
+
 def photo_orientation(width: int, height: int) -> str:
     return "landscape" if width >= height else "portrait"
 
@@ -1131,6 +1135,9 @@ def parser() -> argparse.ArgumentParser:
     create_newsletter = sub.add_parser("create-newsletter")
     create_newsletter.add_argument("output")
     create_newsletter.set_defaults(func=cmd_create_newsletter)
+    create_flyer = sub.add_parser("create-flyer")
+    create_flyer.add_argument("output")
+    create_flyer.set_defaults(func=cmd_create_flyer)
     verify = sub.add_parser("verify")
     verify.add_argument("file")
     verify.add_argument("--allow-blank-pages", action="store_true")

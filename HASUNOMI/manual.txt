@@ -62,6 +62,12 @@ contributions, project reports, notices, and a closing article. Both use Noto
 Sans CJK JP and Japanese sample text; English text remains supported. PDF is
 created only when requested.
 
+The supplied A4 Flyer template creates an editable one-page A4 portrait ODG.
+It organizes a photo, title and date, short lead, venue/content/participation
+facts, application/contact block, and footer without placing text over the
+photo. It uses Japanese sample text and Noto Sans CJK JP; English replacement
+text remains supported. PDF is created only when requested.
+
 OCR creates Markdown text without changing the source file. Japanese setup
 prepares Tesseract jpn+eng and Noto Sans CJK JP for the supplied document
 template. English prepares English OCR without requiring that font. The OCR
