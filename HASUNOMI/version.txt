@@ -1,4 +1,10 @@
-HASUNOMI 1.6.0
+HASUNOMI 1.6.1
+
+- Supplied templates are now opt-in for every deliverable. Before creating
+  files, General asks whether to use the matching supplied template or make a
+  free design, unless the user already chose one in the current request.
+- Document type, previous template use, saved settings, and requests for tests
+  or samples no longer imply consent to use a template.
 
 - Added an editable Japanese A4 event Flyer ODG with a one-page layout.
 - The flyer includes a photo, title and date, lead, three fact columns,

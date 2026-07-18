@@ -5,9 +5,11 @@ description: Create an editable Japanese A4 event flyer from the bundled single-
 
 # A4フライヤー
 
-イベント、講座、地域活動などの案内には、同封のA4縦1ページODGを使います。
+制作前にcore rulesのtemplate choice gateに従って確認します。利用者が
+同封テンプレートを選んだ場合だけ、A4縦1ページODGを使います。
 写真、タイトルと開催日時、短い導入文、会場・内容・参加条件、申込み・連絡先を
-一枚で整理する、余白を重視した日本語テンプレートです。
+一枚で整理する、余白を重視した日本語テンプレートです。自由制作が選ばれた
+場合はこの生成コマンドを使いません。
 
 ```text
 python3 system/office-tool/office-tool create-flyer OUTPUT.odg

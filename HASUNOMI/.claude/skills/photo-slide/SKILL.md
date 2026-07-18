@@ -5,8 +5,9 @@ description: Create a quick editable ODP photo deck from project photos using th
 
 # Photo Slide
 
-Use the bundled template only when the user asks for a simple photo-first deck
-or accepts this template. Free presentation design remains unrestricted.
+Follow the template choice gate in the core rules before creating files. Use
+this workflow only after the user selects the supplied photo template. Free
+presentation design remains unrestricted.
 
 ## Default contract
 

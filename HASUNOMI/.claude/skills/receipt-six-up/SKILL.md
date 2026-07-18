@@ -5,8 +5,9 @@ description: Create an exact A4 six-up Japanese receipt sheet as editable ODG. U
 
 # A4 Six-Up Receipt
 
-Use the bundled receipt renderer when the user wants a simple Japanese receipt
-sheet cut into six exactly equal pieces.
+Follow the template choice gate in the core rules before creating files. Use
+the bundled receipt renderer only after the user selects this supplied
+template; an exact six-up requirement does not itself count as that choice.
 
 ## Fixed geometry
 

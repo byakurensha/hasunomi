@@ -5,9 +5,11 @@ description: Create an editable Japanese 16:9 presentation from the bundled elev
 
 # シンプルスライド
 
-日本語の報告、説明、提案資料を簡潔にまとめる時は、同封の11レイアウトを
-持つODPテンプレートを使います。表紙、メッセージ、本文、目次、2列、写真、
-数値、比較表、進捗、まとめから、必要なページだけ残してください。
+制作前にcore rulesのtemplate choice gateに従って確認します。利用者が
+同封テンプレートを選んだ場合だけ、11レイアウトを持つODPを使います。
+表紙、メッセージ、本文、目次、2列、写真、数値、比較表、進捗、まとめから、
+必要なページだけ残してください。自由制作が選ばれた場合はこの生成コマンドを
+使いません。
 
 ```text
 python3 system/office-tool/office-tool create-simple-slides OUTPUT.odp

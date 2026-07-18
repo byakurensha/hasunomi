@@ -37,6 +37,12 @@ handoff; they are not represented by folders. SHAREBOX is not an archive.
 
 DOCUMENTS AND OCR
 
+When a supplied template matches the request, Claude asks before production
+whether to use that template or create a free design. It does not infer consent
+from the document type, previous use, saved settings, or a request for a test or
+sample. It does not repeat the question when the current request already states
+the choice for that deliverable.
+
 The supplied A4 and meeting-minutes workflows share one tested A4 template and
 create one editable ODT by default. PDF is created only when requested. When
 the supplied template is not appropriate, choose a free design; free designs

@@ -43,6 +43,18 @@
 
 ## Documents and OCR
 
+- Template choice gate: when a requested deliverable matches any supplied
+  template, ask before creating files whether to use that template or make a
+  free design. Apply this to A4 documents, meeting minutes, photo slides,
+  six-up receipts, simple slides, newsletters, flyers, and future supplied
+  templates. Skip the question only when the user has already chosen the
+  supplied template or free design for this deliverable in the current
+  request. Do not infer consent from the document type, prior template use, a
+  request for a test or sample, or the saved settings.
+- When the user chooses the supplied template, follow its Skill and replace or
+  remove sample content as the project requires. When the user chooses free
+  design, do not run the supplied template's creation command or impose its
+  layout.
 - Supplied A4 and meeting-minutes workflows share one bundled A4 template and
   create editable ODT by default. Create PDF only when explicitly requested.
 - The supplied photo-slide workflow creates an editable 16:9 ODP with one of
@@ -50,7 +62,6 @@
 - The supplied six-up receipt workflow creates an editable A4 landscape ODG
   with six exact `148.5 x 70 mm` Japanese receipts. Print at 100 percent and
   create PDF only when explicitly requested.
-- Ask whether to use the supplied template when design intent is unclear.
 - Free design work is not constrained by the bundled template, Noto Sans, ODT,
   LibreOffice, or one production method.
 - OCR creates extracted Markdown and never modifies the source. Report the

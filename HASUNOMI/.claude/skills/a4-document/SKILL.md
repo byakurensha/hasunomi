@@ -5,8 +5,8 @@ description: Create an A4 document. Use the bundled ODT template when selected, 
 
 # A4 Document
 
-When design intent is unclear, ask one question: use the supplied standard
-template, or create a free design?
+Follow the template choice gate in the core rules before creating files. Use
+the path selected by the user for this deliverable.
 
 ## Standard template
 

@@ -5,9 +5,11 @@ description: Create an editable Japanese A4 newsletter from the bundled eight-pa
 
 # 会報
 
-寺院、地域団体、施設、教室などの会報には、同封のA4縦8ページODGを使います。
+制作前にcore rulesのtemplate choice gateに従って確認します。利用者が
+同封テンプレートを選んだ場合だけ、A4縦8ページODGを使います。
 表紙、挨拶、特集、活動報告、写真、寄稿、事業報告、Q&A・お知らせ、巻末の
-読み物を収録しています。案件に不要なページは削除できます。
+読み物を収録しています。案件に不要なページは削除できます。自由制作が
+選ばれた場合はこの生成コマンドを使いません。
 
 ```text
 python3 system/office-tool/office-tool create-newsletter OUTPUT.odg
