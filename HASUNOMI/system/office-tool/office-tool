@@ -114,8 +114,8 @@ def add_text(parent, text_module, value: str, style_name=None):
     parent.addElement(text_module.P(text=value, stylename=style_name))
 
 
-def document_text_properties(style_module, font_name: str, size: str, weight: str):
-    return style_module.TextProperties(
+def document_text_properties(style_module, font_name: str, size: str, weight: str, color: str | None = None):
+    attributes = dict(
         fontname=font_name,
         fontnameasian=font_name,
         fontnamecomplex=font_name,
@@ -126,6 +126,9 @@ def document_text_properties(style_module, font_name: str, size: str, weight: st
         fontweightasian=weight,
         fontweightcomplex=weight,
     )
+    if color:
+        attributes["color"] = color
+    return style_module.TextProperties(**attributes)
 
 
 def display_width(value: object) -> int:
@@ -169,52 +172,78 @@ def cmd_create_odt(args: argparse.Namespace) -> int:
     page = style.PageLayout(name="A4Page")
     page.addElement(style.PageLayoutProperties(
         pagewidth="210mm", pageheight="297mm", printorientation="portrait",
-        margintop="20mm", marginright="18mm", marginbottom="18mm", marginleft="18mm"))
+        margintop="13mm", marginright="15mm", marginbottom="13mm", marginleft="15mm"))
     doc.automaticstyles.addElement(page)
     master = style.MasterPage(name="A4", pagelayoutname=page)
     doc.masterstyles.addElement(master)
 
+    ink = "#243238"
+    green = "#315E55"
+    pale = "#EDF3EF"
+    line = "#B8C5BE"
+    muted = "#68756F"
+
     default = style.Style(name="Body", family="paragraph")
-    default.addElement(document_text_properties(style, font_name, "10.5pt", "normal"))
-    default.addElement(style.ParagraphProperties(lineheight="155%", marginbottom="3mm"))
+    default.addElement(document_text_properties(style, font_name, "10pt", "normal", ink))
+    default.addElement(style.ParagraphProperties(lineheight="135%", marginbottom="1.4mm"))
     doc.styles.addElement(default)
+    body_tight = style.Style(name="BodyTight", family="paragraph", parentstylename=default)
+    body_tight.addElement(style.ParagraphProperties(lineheight="135%", marginbottom="0mm"))
+    doc.styles.addElement(body_tight)
     title = style.Style(name="Title", family="paragraph", parentstylename=default, masterpagename=master)
-    title.addElement(document_text_properties(style, font_name, "18pt", "bold"))
-    title.addElement(style.ParagraphProperties(marginbottom="4mm", paddingbottom="2mm", borderbottom="0.8pt solid #222222"))
+    title.addElement(document_text_properties(style, font_name, "18pt", "bold", ink))
+    title.addElement(style.ParagraphProperties(lineheight="120%", marginbottom="2.5mm"))
     doc.styles.addElement(title)
+    lead = style.Style(name="Lead", family="paragraph", parentstylename=default)
+    lead.addElement(document_text_properties(style, font_name, "9pt", "bold", green))
+    lead.addElement(style.ParagraphProperties(lineheight="130%", marginbottom="2.5mm"))
+    doc.styles.addElement(lead)
     heading1 = style.Style(name="Heading1", family="paragraph", parentstylename=default)
-    heading1.addElement(document_text_properties(style, font_name, "13pt", "bold"))
-    heading1.addElement(style.ParagraphProperties(
-        margintop="5mm", marginbottom="2.5mm", paddingbottom="1.2mm",
-        borderbottom="0.5pt solid #777777"))
+    heading1.addElement(document_text_properties(style, font_name, "11.5pt", "bold", green))
+    heading1.addElement(style.ParagraphProperties(lineheight="130%", margintop="2mm", marginbottom="2.5mm"))
     doc.styles.addElement(heading1)
     heading2 = style.Style(name="Heading2", family="paragraph", parentstylename=default)
-    heading2.addElement(document_text_properties(style, font_name, "11.5pt", "bold"))
-    heading2.addElement(style.ParagraphProperties(margintop="3.5mm", marginbottom="1.5mm"))
+    heading2.addElement(document_text_properties(style, font_name, "10.5pt", "bold", green))
+    heading2.addElement(style.ParagraphProperties(lineheight="135%", margintop="2mm", marginbottom="2.5mm"))
     doc.styles.addElement(heading2)
     heading3 = style.Style(name="Heading3", family="paragraph", parentstylename=default)
-    heading3.addElement(document_text_properties(style, font_name, "10.5pt", "bold"))
-    heading3.addElement(style.ParagraphProperties(margintop="2.5mm", marginbottom="1mm"))
+    heading3.addElement(document_text_properties(style, font_name, "10pt", "bold", ink))
+    heading3.addElement(style.ParagraphProperties(lineheight="135%", margintop="2mm", marginbottom="1mm"))
     doc.styles.addElement(heading3)
     headings = {1: heading1, 2: heading2, 3: heading3}
     table_text = style.Style(name="TableText", family="paragraph", parentstylename=default)
-    table_text.addElement(document_text_properties(style, font_name, "10pt", "normal"))
-    table_text.addElement(style.ParagraphProperties(lineheight="140%", marginbottom="0mm"))
+    table_text.addElement(document_text_properties(style, font_name, "9.5pt", "normal", ink))
+    table_text.addElement(style.ParagraphProperties(lineheight="135%", marginbottom="0mm"))
     doc.styles.addElement(table_text)
     table_head_text = style.Style(name="TableHeadText", family="paragraph", parentstylename=table_text)
-    table_head_text.addElement(document_text_properties(style, font_name, "10pt", "bold"))
+    table_head_text.addElement(document_text_properties(style, font_name, "9.5pt", "bold", green))
     doc.styles.addElement(table_head_text)
     cell = style.Style(name="TableCell", family="table-cell")
-    cell.addElement(style.TableCellProperties(border="0.5pt solid #888888", padding="2mm", verticalalign="middle"))
+    cell.addElement(style.TableCellProperties(border=f"0.5pt solid {line}", padding="1.7mm", verticalalign="middle"))
     doc.automaticstyles.addElement(cell)
     cell_head = style.Style(name="TableHead", family="table-cell")
     cell_head.addElement(style.TableCellProperties(
-        backgroundcolor="#F2F2F2", border="0.5pt solid #888888",
-        padding="2mm", verticalalign="middle"))
+        backgroundcolor=pale, border=f"0.5pt solid {line}", padding="1.7mm", verticalalign="middle"))
     doc.automaticstyles.addElement(cell_head)
+    callout_cell = style.Style(name="CalloutCell", family="table-cell")
+    callout_cell.addElement(style.TableCellProperties(
+        backgroundcolor=pale, border=f"0.5pt solid {line}", padding="3mm", verticalalign="middle"))
+    doc.automaticstyles.addElement(callout_cell)
+    callout_text = style.Style(name="CalloutText", family="paragraph", parentstylename=default)
+    callout_text.addElement(document_text_properties(style, font_name, "10pt", "bold", green))
+    callout_text.addElement(style.ParagraphProperties(textalign="center", lineheight="135%", marginbottom="0mm"))
+    doc.styles.addElement(callout_text)
+    note_cell = style.Style(name="NoteAreaCell", family="table-cell")
+    note_cell.addElement(style.TableCellProperties(border=f"0.5pt solid {line}", padding="2.5mm", verticalalign="top"))
+    doc.automaticstyles.addElement(note_cell)
+    footer = style.Style(name="Footer", family="paragraph", parentstylename=default)
+    footer.addElement(document_text_properties(style, font_name, "8.5pt", "normal", muted))
+    footer.addElement(style.ParagraphProperties(lineheight="130%", margintop="3mm", marginbottom="0mm"))
+    doc.styles.addElement(footer)
 
     add_text(doc.text, text, str(spec.get("title", "Untitled")), title)
-    for block_index, block in enumerate(spec.get("blocks", []), start=1):
+    blocks = spec.get("blocks", [])
+    for block_index, block in enumerate(blocks, start=1):
         kind = block.get("type")
         if kind == "heading":
             try:
@@ -223,18 +252,24 @@ def cmd_create_odt(args: argparse.Namespace) -> int:
                 level = 2
             add_text(doc.text, text, str(block.get("text", "")), headings.get(level, heading3))
         elif kind == "paragraph":
-            add_text(doc.text, text, str(block.get("text", "")), default)
+            next_is_heading = block_index < len(blocks) and blocks[block_index].get("type") == "heading"
+            paragraph_style = lead if block.get("role") == "lead" else (body_tight if next_is_heading else default)
+            add_text(doc.text, text, str(block.get("text", "")), paragraph_style)
         elif kind == "list":
             listing = text.List()
-            for item in block.get("items", []):
+            items = block.get("items", [])
+            next_is_heading = block_index < len(blocks) and blocks[block_index].get("type") == "heading"
+            for item_index, item in enumerate(items):
                 entry = text.ListItem()
-                add_text(entry, text, str(item), default)
+                item_style = body_tight if next_is_heading and item_index == len(items) - 1 else default
+                add_text(entry, text, str(item), item_style)
                 listing.addElement(entry)
             doc.text.addElement(listing)
         elif kind == "table":
             rows = block.get("rows", [])
             if not rows:
                 continue
+            metadata = block.get("role") == "metadata"
             grid = table.Table(name="Table")
             for column_index, width in enumerate(table_column_widths(rows), start=1):
                 column_style = style.Style(
@@ -244,12 +279,45 @@ def cmd_create_odt(args: argparse.Namespace) -> int:
                 grid.addElement(table.TableColumn(stylename=column_style))
             for row_index, values in enumerate(rows):
                 row = table.TableRow()
-                for value in values:
-                    target = table.TableCell(stylename=cell_head if row_index == 0 else cell)
-                    add_text(target, text, str(value), table_head_text if row_index == 0 else table_text)
+                for column_index, value in enumerate(values):
+                    header = not metadata and row_index == 0
+                    label = metadata and column_index % 2 == 0
+                    target = table.TableCell(stylename=cell_head if header or label else cell)
+                    add_text(target, text, str(value), table_head_text if header or label else table_text)
                     row.addElement(target)
                 grid.addElement(row)
             doc.text.addElement(grid)
+        elif kind == "callout":
+            grid = table.Table(name=f"Callout{block_index}")
+            column_style = style.Style(name=f"CalloutColumn{block_index}", family="table-column")
+            column_style.addElement(style.TableColumnProperties(columnwidth="174mm"))
+            doc.automaticstyles.addElement(column_style)
+            grid.addElement(table.TableColumn(stylename=column_style))
+            row = table.TableRow()
+            target = table.TableCell(stylename=callout_cell)
+            add_text(target, text, str(block.get("text", "")), callout_text)
+            row.addElement(target)
+            grid.addElement(row)
+            doc.text.addElement(grid)
+        elif kind == "note-area":
+            rows = max(1, min(int(block.get("rows", 3)), 12))
+            grid = table.Table(name=f"NoteArea{block_index}")
+            column_style = style.Style(name=f"NoteColumn{block_index}", family="table-column")
+            column_style.addElement(style.TableColumnProperties(columnwidth="174mm"))
+            doc.automaticstyles.addElement(column_style)
+            grid.addElement(table.TableColumn(stylename=column_style))
+            for row_index in range(rows):
+                row_style = style.Style(name=f"NoteRow{block_index}_{row_index}", family="table-row")
+                row_style.addElement(style.TableRowProperties(minrowheight="8mm"))
+                doc.automaticstyles.addElement(row_style)
+                row = table.TableRow(stylename=row_style)
+                target = table.TableCell(stylename=note_cell)
+                add_text(target, text, "", table_text)
+                row.addElement(target)
+                grid.addElement(row)
+            doc.text.addElement(grid)
+        elif kind == "footer":
+            add_text(doc.text, text, str(block.get("text", "")), footer)
         else:
             raise OfficeError(f"Unsupported block type: {kind}")
     doc.save(str(output))

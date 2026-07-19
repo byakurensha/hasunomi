@@ -1,4 +1,15 @@
-HASUNOMI 1.6.1
+HASUNOMI 1.6.2
+
+- Standard A4 is the one shared visual template for ordinary A4 documents,
+  meeting minutes, and meeting resumes. It now provides optional lead,
+  metadata-table, callout, handwriting-area, and footer components in addition
+  to headings, paragraphs, lists, and tables.
+- Meeting minutes and resumes are component-selection references, not fixed
+  forms. General selects, omits, reorders, or adds sections to fit the actual
+  meeting purpose.
+- Unified the supplied A4 margins, typography, colors, table treatment, and
+  content spacing. Individual document types do not add their own spacing
+  exceptions.
 
 - Supplied templates are now opt-in for every deliverable. Before creating
   files, General asks whether to use the matching supplied template or make a

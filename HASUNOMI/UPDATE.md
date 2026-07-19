@@ -1,5 +1,12 @@
 # Update payload
 
+Version 1.6.2 consolidates ordinary A4 documents, meeting minutes, and meeting
+resumes into one shared visual A4 template. The shared renderer now supports an
+optional lead, metadata table, callout, handwriting area, and footer alongside
+headings, paragraphs, lists, and normal tables. The meeting examples are
+references: General selects, omits, reorders, or adds components according to
+the actual meeting rather than forcing a fixed form.
+
 Version 1.6.1 makes every supplied template opt-in. General asks whether to use
 the matching supplied template or create a free design before it creates files,
 unless the current request already contains that choice. This applies equally

@@ -18,7 +18,7 @@ A4 event flyer.
 
 Current source versions:
 
-- HASUNOMI: `1.6.1`
+- HASUNOMI: `1.6.2`
 - GLM + DeepSeek Gateway Add-on: `2.0.0`
 
 Release ZIP files are attached to GitHub Releases. The repository source does

@@ -56,7 +56,10 @@
   design, do not run the supplied template's creation command or impose its
   layout.
 - Supplied A4 and meeting-minutes workflows share one bundled A4 template and
-  create editable ODT by default. Create PDF only when explicitly requested.
+  create editable ODT by default. Meeting-minute and meeting-resume section
+  lists are reference structures, not mandatory forms: select, omit, reorder,
+  or add shared A4 components to fit the meeting purpose. Create PDF only when
+  explicitly requested.
 - The supplied photo-slide workflow creates an editable 16:9 ODP with one of
   six photo-first layouts. Create PDF only when explicitly requested.
 - The supplied six-up receipt workflow creates an editable A4 landscape ODG
